@@ -65,6 +65,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
       NODE_ENV: ${NODE_ENV:-development}
       WATCHPACK_POLLING: "true"
+      CI: "true"
     ports:
       - "${FRONTEND_EXTERNAL_PORT:-3000}:3000"
     depends_on:

@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down dev-restart prod-up prod-down prod-restart
+.PHONY: help dev-up dev-down dev-restart prod-up prod-down prod-restart clean
 
 include .env
 export
@@ -19,6 +19,9 @@ help:
 	@echo "  make prod-up       Start all services"
 	@echo "  make prod-down     Stop all services"
 	@echo "  make prod-restart  Restart all services"
+	@echo ""
+	@echo "Other:"
+	@echo "  make clean         Nuke containers, volumes, caches"
 	@echo ""
 	@echo "Ports:"
 	@echo "  Frontend:  http://localhost:${FRONTEND_EXTERNAL_PORT}"
@@ -44,3 +47,8 @@ prod-down:
 prod-restart:
 	$(PROD) down
 	$(PROD) up -d
+
+clean:
+	$(DEV) down -v --remove-orphans
+	docker builder prune -af
+	docker image prune -af

@@ -1,0 +1,89 @@
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: wpp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-wpp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-wpp_dev_password}
+      POSTGRES_DB: ${DB_NAME:-wpp_db}
+    ports:
+      - "${POSTGRES_EXTERNAL_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - wpp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-wpp} -d ${DB_NAME:-wpp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wpp-backend
+    restart: unless-stopped
+    environment:
+      APP_HOST: ${APP_HOST:-0.0.0.0}
+      APP_PORT: ${APP_PORT:-8000}
+      APP_RELOAD: ${APP_RELOAD:-true}
+      DB_USER: ${DB_USER:-wpp}
+      DB_PASSWORD: ${DB_PASSWORD:-wpp_dev_password}
+      DB_NAME: ${DB_NAME:-wpp_db}
+      DB_HOST: postgres-db
+      DB_PORT: 5432
+    ports:
+      - "${BACKEND_EXTERNAL_PORT:-8000}:${APP_PORT:-8000}"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - wpp-network
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "
+        if [ \"$$APP_RELOAD\" = \"true\" ]; then
+          uvicorn app.main:app --host 0.0.0.0 --port $$APP_PORT --reload
+        else
+          uvicorn app.main:app --host 0.0.0.0 --port $$APP_PORT --workers 4
+        fi
+      "
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: ${FRONTEND_TARGET:-deps}
+    container_name: wpp-frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      NODE_ENV: ${NODE_ENV:-development}
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${FRONTEND_EXTERNAL_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    networks:
+      - wpp-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: >
+      sh -c "
+        if [ \"$$NODE_ENV\" = \"production\" ]; then
+          exec pnpm start
+        else
+          pnpm install --no-frozen-lockfile && exec pnpm dev
+        fi
+      "
+
+networks:
+  wpp-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

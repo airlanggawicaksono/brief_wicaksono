@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
 
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4.1-mini-2025-04-14"
+
     @property
     def database_url(self) -> str:
         return (

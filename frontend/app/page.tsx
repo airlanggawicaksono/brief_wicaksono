@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { predict } from "@/api/predict";
+import { predictStream } from "@/api/predict";
 import type { PredictResult } from "@/types/predict";
 
 export default function Home() {
   const [input, setInput] = useState("");
+  const [tokens, setTokens] = useState("");
   const [result, setResult] = useState<PredictResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,14 +17,18 @@ export default function Home() {
 
     setLoading(true);
     setError(null);
-    try {
-      const data = await predict(input);
-      setResult(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    setTokens("");
+    setResult(null);
+
+    await predictStream(input, {
+      onToken: (content) => setTokens((prev) => prev + content),
+      onResult: (data) => setResult(data),
+      onDone: () => setLoading(false),
+      onError: (msg) => {
+        setError(msg);
+        setLoading(false);
+      },
+    });
   }
 
   return (
@@ -49,14 +54,27 @@ export default function Home() {
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
+      {tokens && (
+        <div className="mb-4 rounded border border-gray-200 bg-white p-4">
+          <h2 className="mb-2 text-sm font-semibold text-gray-500">
+            Raw stream
+          </h2>
+          <pre className="whitespace-pre-wrap text-sm font-mono">{tokens}</pre>
+        </div>
+      )}
+
       {result && (
         <div className="space-y-4">
           <div className="rounded border border-gray-200 bg-white p-4">
-            <h2 className="mb-2 text-sm font-semibold text-gray-500">Intent</h2>
+            <h2 className="mb-2 text-sm font-semibold text-gray-500">
+              Intent
+            </h2>
             <p className="text-lg">{result.intent}</p>
           </div>
           <div className="rounded border border-gray-200 bg-white p-4">
-            <h2 className="mb-2 text-sm font-semibold text-gray-500">Entities</h2>
+            <h2 className="mb-2 text-sm font-semibold text-gray-500">
+              Entities
+            </h2>
             <dl className="space-y-1">
               {Object.entries(result.entities).map(([key, value]) =>
                 value != null ? (

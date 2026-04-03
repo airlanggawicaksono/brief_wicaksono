@@ -27,6 +27,7 @@ help:
 	@echo "  Frontend:  http://localhost:${FRONTEND_EXTERNAL_PORT}"
 	@echo "  Backend:   http://localhost:${BACKEND_EXTERNAL_PORT}/docs"
 	@echo "  Database:  localhost:${POSTGRES_EXTERNAL_PORT}"
+	@echo "  Redis:     localhost:${REDIS_EXTERNAL_PORT}"
 
 dev-up:
 	$(DEV) up -d

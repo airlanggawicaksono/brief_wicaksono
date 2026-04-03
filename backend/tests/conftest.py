@@ -3,8 +3,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.config.database import Base
-from app.dependencies import get_db
+from app.core.config.database import Base
+from app.dependencies.di import get_db
 from app.main import app
 
 engine = create_engine("sqlite:///:memory:")

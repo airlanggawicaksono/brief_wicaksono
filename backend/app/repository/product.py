@@ -11,14 +11,14 @@ class ProductRepository(BaseRepository[Product]):
     def search(
         self,
         category: str | None = None,
-        target: str | None = None,
+        brand: str | None = None,
         price_max: int | None = None,
     ) -> list[Product]:
         q: Query = self.db.query(Product)
         if category:
             q = q.filter(Product.category.ilike(f"%{category}%"))
-        if target:
-            q = q.filter(Product.target.ilike(f"%{target}%"))
+        if brand:
+            q = q.filter(Product.brand.ilike(f"%{brand}%"))
         if price_max:
             q = q.filter(Product.price <= price_max)
         return q.all()

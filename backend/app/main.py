@@ -1,19 +1,27 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config.database import Base, engine
-from app.exceptions.base import AppException
-from app.exceptions.handlers import app_exception_handler
-from app.routers import predict
+from app.core.config.database import Base, engine, SessionLocal
+from app.core.exceptions.base import AppException
+from app.core.exceptions.handlers import app_exception_handler
+from app.api.v1 import predict
+from app.seed import seed_data
+import app.models
 
 Base.metadata.create_all(bind=engine)
+
+db = SessionLocal()
+try:
+    seed_data(db)
+finally:
+    db.close()
 
 app = FastAPI(
     title="WPP API",
     description="AI-powered text to structured data",
     version="0.1.0",
     openapi_tags=[
-        {"name": "predict", "description": "Text → structured output + product search"},
+        {"name": "predict", "description": "Text → structured output + data query"},
         {"name": "health", "description": "Health check"},
     ],
 )

@@ -27,15 +27,15 @@ export function useChat(): UseChatReturn {
 
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "", streaming: true },
+      { role: "assistant", content: "", loading: true },
     ]);
 
     await predictStream(userMsg, {
-      onToken: (token) => {
+      onExtraction: (extraction) => {
         setMessages((prev) => {
           const updated = [...prev];
           const msg = updated[assistantIndex];
-          if (msg) msg.content += token;
+          if (msg) msg.content = `Intent: ${extraction.intent}`;
           return updated;
         });
       },
@@ -43,7 +43,10 @@ export function useChat(): UseChatReturn {
         setMessages((prev) => {
           const updated = [...prev];
           const msg = updated[assistantIndex];
-          if (msg) msg.result = result;
+          if (msg) {
+            msg.result = result;
+            msg.content = result.message || `Intent: ${result.extraction.intent}`;
+          }
           return updated;
         });
       },
@@ -51,7 +54,7 @@ export function useChat(): UseChatReturn {
         setMessages((prev) => {
           const updated = [...prev];
           const msg = updated[assistantIndex];
-          if (msg) msg.streaming = false;
+          if (msg) msg.loading = false;
           return updated;
         });
         setLoading(false);
@@ -62,7 +65,7 @@ export function useChat(): UseChatReturn {
           const msg = updated[assistantIndex];
           if (msg) {
             msg.content = `Error: ${err}`;
-            msg.streaming = false;
+            msg.loading = false;
           }
           return updated;
         });

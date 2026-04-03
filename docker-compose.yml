@@ -19,6 +19,20 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: wpp-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6399}:6379"
+    networks:
+      - wpp-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -34,12 +48,16 @@ services:
       DB_NAME: ${DB_NAME:-wpp_db}
       DB_HOST: postgres-db
       DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini-2025-04-14}
     ports:
       - "${BACKEND_EXTERNAL_PORT:-8000}:${APP_PORT:-8000}"
     depends_on:
       postgres-db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - wpp-network

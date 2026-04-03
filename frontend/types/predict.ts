@@ -4,13 +4,27 @@ export interface Entities {
   price_max: number | null;
 }
 
-export interface PredictResult {
+export interface Extraction {
   intent: string;
   entities: Entities;
 }
 
+export interface ToolResult {
+  tool: string;
+  args: Record<string, unknown>;
+  data: Record<string, unknown>[] | unknown;
+}
+
+export interface PredictResult {
+  input: string;
+  extraction: Extraction;
+  tool_results: ToolResult[];
+  message: string;
+}
+
 export type SSECallback = {
-  onToken: (content: string) => void;
+  onExtraction?: (extraction: Extraction) => void;
+  onToolResult?: (toolOutput: { tool_results: ToolResult[]; message: string }) => void;
   onResult: (result: PredictResult) => void;
   onDone: () => void;
   onError?: (error: string) => void;

@@ -2,18 +2,21 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    APP_HOST: str = "0.0.0.0"
-    APP_PORT: int = 8000
-    APP_RELOAD: bool = True
+    APP_HOST: str
+    APP_PORT: int
+    APP_RELOAD: bool
 
-    DB_USER: str = "wpp"
-    DB_PASSWORD: str = "wpp_dev_password"
-    DB_NAME: str = "wpp_db"
-    DB_HOST: str = "localhost"
-    DB_PORT: int = 5432
+    DB_USER: str
+    DB_PASSWORD: str
+    DB_NAME: str
+    DB_HOST: str
+    DB_PORT: int
 
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4.1-mini-2025-04-14"
+    OPENAI_API_KEY: str
+    OPENAI_MODEL: str
+
+    REDIS_HOST: str
+    REDIS_PORT: int
 
     @property
     def database_url(self) -> str:

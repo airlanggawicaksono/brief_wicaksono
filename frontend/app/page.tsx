@@ -17,7 +17,7 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       <div className="border-b border-gray-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-semibold">check somethingout</h1>
+        <h1 className="text-lg font-semibold">Brief</h1>
         <p className="text-xs text-gray-400">what eva</p>
       </div>
 

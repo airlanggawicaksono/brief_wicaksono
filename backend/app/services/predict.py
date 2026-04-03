@@ -1,89 +1,36 @@
-import json
-from collections.abc import Generator
-
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.config.settings import settings
-from app.dto.predict import Entities, PredictResponse
-from app.models.product import Product
-from app.repository.product import ProductRepository
-
-SYSTEM_PROMPT = """You extract intent and entities from natural language input.
-Return ONLY valid JSON with this exact structure:
-{
-  "intent": "<string>",
-  "entities": {
-    "category": "<string or null>",
-    "target": "<string or null>",
-    "price_max": <integer or null>
-  }
-}
-
-Common intents: product_search, product_detail, greeting, unknown
-Do not include any text outside the JSON."""
-
-llm = ChatOpenAI(
-    api_key=settings.OPENAI_API_KEY,
-    model=settings.OPENAI_MODEL,
-    temperature=0,
-    streaming=True,
-)
+from app.core.technical_policy.retry import retry
+from app.dependencies.providers.llm import LLMProvider
+from app.dependencies.prompts.tool_agent import TOOL_AGENT_PROMPT
 
 
 class PredictService:
-    def __init__(self, product_repo: ProductRepository):
-        self.product_repo = product_repo
+    """Reusable: execute tools via LLM tool calling."""
 
-    def predict_stream(self, text: str) -> Generator[str]:
-        """Stream tokens via SSE, then emit the parsed result at the end."""
+    def __init__(self, provider: LLMProvider, tools: list):
+        self.llm_with_tools = provider.bind_tools(tools)
+        self._tool_map = {t.name: t for t in tools}
+
+    @retry()
+    def execute(self, text: str) -> dict:
         messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
+            SystemMessage(content=TOOL_AGENT_PROMPT),
             HumanMessage(content=text),
         ]
+        response = self.llm_with_tools.invoke(messages)
 
-        full_response = ""
-        for chunk in llm.stream(messages):
-            token = chunk.content
-            if token:
-                full_response += token
-                yield f"event: token\ndata: {json.dumps({'content': token})}\n\n"
+        if response.tool_calls:
+            tool_results = []
+            for call in response.tool_calls:
+                tool_fn = self._tool_map.get(call["name"])
+                if tool_fn:
+                    output = tool_fn.invoke(call["args"])
+                    tool_results.append({
+                        "tool": call["name"],
+                        "args": call["args"],
+                        "data": output,
+                    })
+            return {"tool_results": tool_results, "message": response.content or ""}
 
-        # parse final result
-        try:
-            data = json.loads(full_response)
-            result = PredictResponse(
-                intent=data.get("intent", "unknown"),
-                entities=Entities(**data.get("entities", {})),
-            )
-        except (json.JSONDecodeError, Exception):
-            result = PredictResponse(intent="unknown", entities=Entities())
-
-        yield f"event: result\ndata: {result.model_dump_json()}\n\n"
-        yield f"event: done\ndata: {{}}\n\n"
-
-    def predict(self, text: str) -> PredictResponse:
-        """Non-streaming predict for internal use (e.g. search)."""
-        messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=text),
-        ]
-        response = llm.invoke(messages)
-        raw = response.content.strip()
-
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return PredictResponse(intent="unknown", entities=Entities())
-
-        return PredictResponse(
-            intent=data.get("intent", "unknown"),
-            entities=Entities(**data.get("entities", {})),
-        )
-
-    def search_products(self, entities: Entities) -> list[Product]:
-        return self.product_repo.search(
-            category=entities.category,
-            target=entities.target,
-            price_max=entities.price_max,
-        )
+        return {"tool_results": [], "message": response.content or ""}

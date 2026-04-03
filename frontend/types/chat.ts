@@ -1,11 +1,12 @@
 import type { RefObject } from "react";
 import type { PredictResult } from "./predict";
+import React from "react";
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
   result?: PredictResult;
-  streaming?: boolean;
+  loading?: boolean;
 }
 
 export interface UseChatReturn {

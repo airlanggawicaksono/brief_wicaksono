@@ -1,42 +1,153 @@
-import api from "./base";
-import type { SSECallback } from "@/types/predict";
+import type { Extraction, PredictResult, ProcessStep, SSECallback, ToolResult } from "@/types/predict";
+
+const SESSION_STORAGE_KEY = "wpp_session_id";
+
+function getSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+
+  let sessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!sessionId) {
+    sessionId = window.crypto?.randomUUID?.() ?? `${Date.now()}`;
+    window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  }
+
+  return sessionId;
+}
+
+function saveSessionIdFromHeaders(headers: unknown): void {
+  if (typeof window === "undefined" || !headers) return;
+
+  let sessionId: string | null = null;
+  try {
+    if (typeof headers === "object" && headers !== null && "get" in headers) {
+      const getter = (headers as { get?: (name: string) => string | null }).get;
+      const raw = typeof getter === "function" ? getter("x-session-id") : null;
+      if (typeof raw === "string" && raw.trim().length > 0) {
+        sessionId = raw.trim();
+      }
+    } else if (typeof headers === "object" && headers !== null) {
+      const raw = (headers as Record<string, unknown>)["x-session-id"];
+      if (typeof raw === "string" && raw.trim().length > 0) {
+        sessionId = raw.trim();
+      }
+    }
+  } catch {
+    return;
+  }
+
+  if (sessionId) {
+    window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  }
+}
+
+function handleEventChunk(chunk: string, callbacks: SSECallback): boolean {
+  const lines = chunk
+    .split("\n")
+    .map((line) => line.replace(/\r$/, ""))
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) return false;
+
+  let eventType = "";
+  const dataLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      eventType = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+
+  if (!eventType || dataLines.length === 0) return false;
+
+  const dataRaw = dataLines.join("\n");
+  try {
+    const data: unknown = JSON.parse(dataRaw);
+    const isObject = typeof data === "object" && data !== null;
+
+    if (eventType === "extraction") {
+      if (isObject) callbacks.onExtraction?.(data as Extraction);
+    } else if (eventType === "process") {
+      if (isObject) callbacks.onProcess?.(data as ProcessStep);
+    } else if (eventType === "tool_start") {
+      if (isObject) callbacks.onToolStart?.(data as ToolResult);
+    } else if (eventType === "tool_end") {
+      if (isObject) callbacks.onToolEnd?.(data as ToolResult);
+    } else if (eventType === "message") {
+      if (typeof data === "string") callbacks.onMessage?.(data);
+    } else if (eventType === "result") {
+      if (isObject) callbacks.onResult(data as PredictResult);
+    } else if (eventType === "cached") {
+      if (isObject) callbacks.onResult(data as PredictResult);
+    }
+    else if (eventType === "done") callbacks.onDone();
+  } catch {
+    return false;
+  }
+
+  return eventType === "done";
+}
 
 export async function predictStream(text: string, callbacks: SSECallback) {
   try {
-    const res = await api.post("/predict", { text }, { responseType: "stream", adapter: "fetch" });
+    const sessionId = getSessionId();
+    const base = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+    const endpoint = `${base}/predict`;
 
-    const reader = (res.data as ReadableStream).getReader();
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionId ? { "X-Session-Id": sessionId } : {}),
+      },
+      body: JSON.stringify({ text }),
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      throw new Error(`Request failed with status ${res.status}`);
+    }
+
+    saveSessionIdFromHeaders(res.headers);
+
+    if (!res.body) {
+      const fallback = await res.text();
+      if (fallback && callbacks.onMessage) callbacks.onMessage(fallback);
+      callbacks.onDone();
+      return;
+    }
+
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let hasDoneEvent = false;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
 
-      let eventType = "";
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7);
-        } else if (line.startsWith("data: ")) {
-          const data = JSON.parse(line.slice(6));
-          if (eventType === "extraction") callbacks.onExtraction?.(data);
-          else if (eventType === "tool_result") callbacks.onToolResult?.(data);
-          else if (eventType === "result") callbacks.onResult(data);
-          else if (eventType === "cached") callbacks.onResult(data);
-          else if (eventType === "done") callbacks.onDone();
-        }
+      for (const chunk of chunks) {
+        hasDoneEvent = handleEventChunk(chunk, callbacks) || hasDoneEvent;
       }
     }
+
+    buffer += decoder.decode();
+    buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+    if (buffer.trim().length > 0) {
+      hasDoneEvent = handleEventChunk(buffer, callbacks) || hasDoneEvent;
+    }
+
+    if (!hasDoneEvent) {
+      callbacks.onDone();
+    }
   } catch (err) {
+    console.error("predictStream error:", err);
     callbacks.onError?.(err instanceof Error ? err.message : "Request failed");
   }
-}
-
-export async function fetchHistory(limit: number = 50) {
-  const res = await api.get("/predict/history", { params: { limit } });
-  return res.data;
 }

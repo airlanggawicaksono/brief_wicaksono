@@ -1,11 +1,14 @@
 import type { RefObject } from "react";
-import type { PredictResult } from "./predict";
+import type { Extraction, PredictResult, ProcessStep, ToolResult } from "./predict";
 import React from "react";
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
+  extraction?: Extraction;
   result?: PredictResult;
+  process?: ProcessStep[];
+  toolCalls?: ToolResult[];
   loading?: boolean;
 }
 

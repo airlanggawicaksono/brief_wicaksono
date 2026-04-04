@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-wpp_dev_password}
       POSTGRES_DB: ${DB_NAME:-wpp_db}
     ports:
-      - "${POSTGRES_EXTERNAL_PORT:-5433}:5432"
+      - "${POSTGRES_EXTERNAL_PORT:-5433}:${DB_PORT:-5432}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -20,11 +20,12 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:latest
     container_name: wpp-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_EXTERNAL_PORT:-6399}:6379"
+      - "${REDIS_EXTERNAL_PORT:-6399}:${REDIS_PORT:-6379}"
+      - "${REDIS_STACK_EXTERNAL_PORT:-8001}:8001"
     networks:
       - wpp-network
     healthcheck:
@@ -47,11 +48,16 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-wpp_dev_password}
       DB_NAME: ${DB_NAME:-wpp_db}
       DB_HOST: postgres-db
-      DB_PORT: 5432
+      DB_PORT: ${DB_PORT:-5432}
       REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini-2025-04-14}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GOOGLE_MODEL: ${GOOGLE_MODEL:-gemini-2.0-flash}
     ports:
       - "${BACKEND_EXTERNAL_PORT:-8000}:${APP_PORT:-8000}"
     depends_on:
@@ -66,9 +72,9 @@ services:
     command: >
       sh -c "
         if [ \"$$APP_RELOAD\" = \"true\" ]; then
-          uvicorn app.main:app --host 0.0.0.0 --port $$APP_PORT --reload
+          uvicorn app:app --host 0.0.0.0 --port $$APP_PORT --reload
         else
-          uvicorn app.main:app --host 0.0.0.0 --port $$APP_PORT --workers 4
+          uvicorn app:app --host 0.0.0.0 --port $$APP_PORT --workers 4
         fi
       "
 

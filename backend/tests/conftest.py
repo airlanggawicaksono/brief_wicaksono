@@ -1,29 +1,25 @@
+from contextlib import asynccontextmanager
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from app.core.config.database import Base
-from app.dependencies.di import get_db
-from app.main import app
-
-engine = create_engine("sqlite:///:memory:")
-TestSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+from app import app
 
 
 @pytest.fixture
-def db():
-    Base.metadata.create_all(bind=engine)
-    session = TestSession()
+def client():
+    original_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def no_lifespan(_: FastAPI):
+        yield
+
+    app.router.lifespan_context = no_lifespan
+
     try:
-        yield session
+        yield TestClient(app)
     finally:
-        session.close()
-        Base.metadata.drop_all(bind=engine)
+        app.router.lifespan_context = original_lifespan
+        app.dependency_overrides.clear()
 
-
-@pytest.fixture
-def client(db):
-    app.dependency_overrides[get_db] = lambda: db
-    yield TestClient(app)
-    app.dependency_overrides.clear()

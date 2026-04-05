@@ -7,24 +7,28 @@ from pydantic import ValidationError
 
 from app.core.business_policy.intent_policy import IntentPolicy
 from app.core.business_policy.tool_policy import ToolPolicy
+from app.core.enum.intents import Intent
+from app.core.prompts.clarification import CLARIFICATION_PROMPT
+from app.core.prompts.general import GENERAL_PROMPT
+from app.core.prompts.summarize import EMPTY_RESPONSE_RETRY, SUMMARIZE_PROMPT
 from app.core.prompts.tool_agent import TOOL_AGENT_PROMPT
 from app.core.technical_policy.cache import get_cached, put_cached
 from app.core.technical_policy.retry import retry
 from app.dto.predict_result import PredictResult, ProcessStep, ToolExecution
 from app.dto.response import PredictResponse
 from app.repository.chat_memory import RedisChatMemory
-from app.services.extraction import ExtractionService
+from app.services.intent import IntentService
 from app.services.query_tools import QueryToolFactory
 from app.services.schema import SchemaService
 
 
 class PredictService:
-    """Main predict orchestration: extract -> metadata -> plan/validate/execute -> summarize."""
+    """Main predict orchestration: detect intent -> metadata -> plan/validate/execute -> summarize."""
 
     def __init__(
         self,
         provider: BaseChatModel,
-        extraction_service: ExtractionService,
+        intent_service: IntentService,
         schema_service: SchemaService,
         tool_factory: QueryToolFactory,
         intent_policy: IntentPolicy,
@@ -32,7 +36,7 @@ class PredictService:
         chat_memory: RedisChatMemory,
     ):
         self.provider = provider
-        self.extraction_service = extraction_service
+        self.intent_service = intent_service
         self.schema_service = schema_service
         self.intent_policy = intent_policy
         self.tool_policy = tool_policy
@@ -70,8 +74,7 @@ class PredictService:
         emit_process("received_input", "Received input", "Starting intent detection.")
         yield from flush_events()
 
-        extraction = self.extraction_service.extract(text)
-        extraction = PredictResponse.model_validate(extraction)
+        extraction = self.intent_service.detect(text)
         yield f"event: extraction\ndata: {extraction.model_dump_json(warnings=False)}\n\n"
 
         emit_process("intent_detected", "Intent detected", "Intent classification complete.")
@@ -85,14 +88,23 @@ class PredictService:
         metadata_snapshot_version: str | None = None
 
         schema_context: dict | None = None
-        if self.intent_policy.is_data_intent(extraction.intent):
+        is_data_intent = self.intent_policy.is_data_intent(extraction.intent)
+        if is_data_intent:
             schema_context = self.schema_service.get_schema(detail_level="summary")
             if isinstance(schema_context, dict):
                 metadata_snapshot_hash = schema_context.get("snapshot_hash")
                 metadata_snapshot_version = schema_context.get("snapshot_version")
-            emit_process("lookup_schema", "Schema metadata loaded", f"snapshot={metadata_snapshot_version or 'unknown'}")
+            emit_process(
+                "lookup_schema", "Schema metadata loaded", f"snapshot={metadata_snapshot_version or 'unknown'}"
+            )
             emit_process("plan", "Planning query", "Model is preparing a metadata-aware query plan.")
-            yield from flush_events()
+        else:
+            # For direct intents, emit the full stage timeline first,
+            # then stream the chunked assistant message.
+            emit_process("direct_response", "Direct response", "No data tool execution was needed.")
+            emit_process("summarize", "Summarizing result", "Preparing final response for the user.")
+            emit_process("response_ready", "Response generated", "Done.")
+        yield from flush_events()
 
         for item in self.execute_stream(text, extraction, history=history, schema_context=schema_context):
             if isinstance(item, ToolExecution):
@@ -140,12 +152,13 @@ class PredictService:
                 message = item
                 yield f"event: message\ndata: {json.dumps(message)}\n\n"
 
-        if tool_results:
-            emit_process("tools_executed", "Tools executed", ", ".join(tool.tool for tool in tool_results))
-        else:
-            emit_process("direct_response", "Direct response", "No data tool execution was needed.")
-        emit_process("summarize", "Summarizing result", "Preparing final response for the user.")
-        emit_process("response_ready", "Response generated", "Done.")
+        if is_data_intent:
+            if tool_results:
+                emit_process("tools_executed", "Tools executed", ", ".join(tool.tool for tool in tool_results))
+            else:
+                emit_process("direct_response", "Direct response", "No data tool execution was needed.")
+            emit_process("summarize", "Summarizing result", "Preparing final response for the user.")
+            emit_process("response_ready", "Response generated", "Done.")
         yield from flush_events()
 
         result = PredictResult(
@@ -270,7 +283,7 @@ class PredictService:
                             "code": "metadata_required",
                             "message": "metadata-first required: call lookup_schema before query_table",
                         },
-                        "hint": "Call lookup_schema and pass snapshot_hash into QueryPlanV2.metadata_hash.",
+                        "hint": "Call lookup_schema and pass snapshot_hash into QueryPlan.metadata_hash.",
                     }
                     blocked_exec = ToolExecution(tool=tool_name, args=tool_args, data=blocked)
                     executed_tools.append(blocked_exec)
@@ -330,17 +343,10 @@ class PredictService:
         yield from self._yield_progressive_text(self._fallback_from_tool_results(executed_tools))
 
     def _build_non_data_message(self, text: str, intent: str, history: list | None = None) -> str:
+        system_content = CLARIFICATION_PROMPT if intent == Intent.CLARIFICATION else GENERAL_PROMPT
+
         messages: list = [
-            SystemMessage(
-                content=(
-                    "You are a helpful assistant in a marketing analytics app. "
-                    "If the user asks greeting/smalltalk, reply naturally and briefly. "
-                    "If intent is unclear, ask one clarifying question and provide 2 short examples "
-                    "about products, audiences, campaigns, or performance. "
-                    "Always respond in the same language as the user's latest message."
-                )
-            ),
-            SystemMessage(content=f"Detected intent: {intent}"),
+            SystemMessage(content=system_content),
         ]
 
         if history:
@@ -358,7 +364,7 @@ class PredictService:
 
         retry_messages = [
             *messages,
-            SystemMessage(content="Your previous response was empty. Reply in one short helpful sentence."),
+            SystemMessage(content=EMPTY_RESPONSE_RETRY),
         ]
         retry_response = self.provider.invoke(retry_messages)
         retry_text = self._content_to_text(retry_response.content)
@@ -416,13 +422,7 @@ class PredictService:
             payload_json = payload_json[:6000] + "...(truncated)"
 
         messages = [
-            SystemMessage(
-                content=(
-                    "You are a helpful assistant in a marketing analytics app. "
-                    "Answer only from tool outputs. If data is empty, say so clearly. "
-                    "Reply in the same language as the user's latest message."
-                )
-            ),
+            SystemMessage(content=SUMMARIZE_PROMPT),
             HumanMessage(content=f"User request: {user_text}"),
             SystemMessage(content=f"Tool outputs: {payload_json}"),
         ]
@@ -497,5 +497,5 @@ class PredictService:
             return
         built = ""
         for idx in range(0, len(normalized), chunk_size):
-            built += normalized[idx: idx + chunk_size]
+            built += normalized[idx : idx + chunk_size]
             yield built

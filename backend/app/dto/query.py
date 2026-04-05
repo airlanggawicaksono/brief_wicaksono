@@ -102,7 +102,7 @@ class QueryOrderItem(BaseModel):
 
 class QuerySubquery(BaseModel):
     alias: str = Field(min_length=1)
-    plan: "QueryPlanV2"
+    plan: "QueryPlan"
     join_on_left: str = Field(min_length=1)
     join_on_right: str = Field(min_length=1)
     join_type: QueryJoinType = "inner"
@@ -113,7 +113,7 @@ class QuerySubquery(BaseModel):
         return value.strip().lower()
 
 
-class QueryPlanV2(BaseModel):
+class QueryPlan(BaseModel):
     source: QuerySource
     select: list[QuerySelectItem] = Field(default_factory=list)
     joins: list[QueryJoinItem] = Field(default_factory=list)
@@ -145,4 +145,4 @@ class QueryPlanV2(BaseModel):
         return self
 
 
-QueryPlanV2.model_rebuild()
+QueryPlan.model_rebuild()

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
+import { flushSync } from "react-dom";
 import { predictStream } from "@/api/predict";
 import type { Message, UseChatReturn } from "@/types/chat";
 import type { ProcessStep, ToolResult } from "@/types/predict";
@@ -96,7 +97,22 @@ export function useChat(): UseChatReturn {
     const update = (fn: (msg: Message) => void) => {
       setMessages((prev) => {
         const updated = [...prev];
-        const msg = updated[assistantIndex];
+        let targetIndex = assistantIndex;
+        const isValidAssistant =
+          targetIndex >= 0 &&
+          targetIndex < updated.length &&
+          updated[targetIndex]?.role === "assistant";
+
+        if (!isValidAssistant) {
+          targetIndex = updated.findLastIndex(
+            (item) => item.role === "assistant" && item.loading,
+          );
+        }
+
+        if (targetIndex < 0 || targetIndex >= updated.length) return prev;
+        assistantIndex = targetIndex;
+
+        const msg = updated[targetIndex];
         if (!msg) return prev;
         fn(msg);
         return updated;
@@ -159,8 +175,19 @@ export function useChat(): UseChatReturn {
       },
       onMessage: (message: string) => {
         if (typeof message !== "string") return;
-        update((msg) => {
-          msg.content = message;
+        flushSync(() => {
+          update((msg) => {
+            const current = typeof msg.content === "string" ? msg.content : "";
+            if (!current) {
+              msg.content = message;
+              return;
+            }
+            if (message.startsWith(current) || message.length >= current.length) {
+              msg.content = message;
+              return;
+            }
+            msg.content = `${current}${message}`;
+          });
         });
       },
       onResult: (result) => {
@@ -168,7 +195,11 @@ export function useChat(): UseChatReturn {
         update((msg) => {
           msg.result = result;
           msg.process = dedupeSteps(Array.isArray(result.process) ? result.process : []);
-          msg.content = typeof result.message === "string" ? result.message : msg.content;
+          const hasStreamedContent =
+            typeof msg.content === "string" && msg.content.trim().length > 0;
+          if (!hasStreamedContent && typeof result.message === "string") {
+            msg.content = result.message;
+          }
 
           const resultTools = Array.isArray(result.tool_results) ? result.tool_results : [];
           if (resultTools.length > 0) {

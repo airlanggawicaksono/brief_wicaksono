@@ -74,10 +74,7 @@ class SchemaService:
                     foreign_keys=foreign_keys,
                 )
 
-        raw_tables_dump = {
-            table_key: table_meta.model_dump()
-            for table_key, table_meta in schema.items()
-        }
+        raw_tables_dump = {table_key: table_meta.model_dump() for table_key, table_meta in schema.items()}
         snapshot_hash = hashlib.sha256(
             json.dumps(raw_tables_dump, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()
@@ -91,7 +88,7 @@ class SchemaService:
                     description="Inspect current schema metadata, relationships, and constraints.",
                 ),
                 "query_table": QueryToolMetadata(
-                    description="Execute a structured QueryPlanV2 with metadata_hash validation.",
+                    description="Execute a structured QueryPlan with metadata_hash validation.",
                 ),
             },
             constraints=SchemaConstraintsMetadata(

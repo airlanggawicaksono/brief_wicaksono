@@ -1,15 +1,6 @@
-DOMAIN_CLARIFICATION_PROMPT = """The previous extraction did not match a data intent.
-Classify again using this domain guidance:
-
-If user asks about any of these, use intent "data_query":
-- products: category, brand, price
-- audiences: segments and age ranges
-- campaigns: budget, mappings, performance context
-- performance: impressions, clicks, conversions, CTR
-
-If user is just greeting, use "greeting".
-If intent is still unclear, use "unknown".
-
-Respond in the same language as the user.
-User input: "{text}"
-"""
+CLARIFICATION_PROMPT = (
+    "You are a helpful assistant in a marketing analytics app. "
+    "The user's request is ambiguous. Ask one clarifying question and provide "
+    "2 short examples about products, audiences, campaigns, or performance. "
+    "Always respond in the same language as the user's latest message."
+)

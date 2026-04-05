@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.business_policy.query_policy import QueryPolicy
 from app.core.exceptions.base import BadRequestException
-from app.dto.query import QueryPlanV2
+from app.dto.query import QueryPlan
 
 
 class QueryExecutor:
@@ -20,7 +20,7 @@ class QueryExecutor:
     # Structured plan v2 execution
     def execute_plan_v2(
         self,
-        plan: QueryPlanV2,
+        plan: QueryPlan,
         schema_metadata: dict | None = None,
     ) -> tuple[list[dict], str]:
         allowed_tables = self.query_policy.resolve_allowed_tables(schema_metadata)
@@ -91,9 +91,7 @@ class QueryExecutor:
 
             candidates = [table for table in allowed_table_names if table.endswith(f".{table_name}")]
             if not candidates:
-                raise BadRequestException(
-                    f"Table '{qualified}' is not allowed. Allowed: {sorted(allowed_table_names)}"
-                )
+                raise BadRequestException(f"Table '{qualified}' is not allowed. Allowed: {sorted(allowed_table_names)}")
             if len(candidates) > 1:
                 raise BadRequestException(f"Table '{table_name}' is ambiguous. Use schema-qualified name.")
 
@@ -168,7 +166,7 @@ class QueryExecutor:
 
     def _build_sql_from_plan(
         self,
-        plan: QueryPlanV2,
+        plan: QueryPlan,
         *,
         allowed_tables: dict[str, set[str]],
         depth: int = 0,
@@ -230,12 +228,16 @@ class QueryExecutor:
         where_sql_parts: list[str] = []
         for filter_item in plan.filters:
             where_sql_parts.append(
-                self._compile_filter(filter_item.field, filter_item.op, filter_item.value, scope_map, source_scope, allowed_tables)
+                self._compile_filter(
+                    filter_item.field, filter_item.op, filter_item.value, scope_map, source_scope, allowed_tables
+                )
             )
 
         group_sql = ""
         if plan.group_by:
-            group_items = [self._compile_field_ref(field, scope_map, source_scope, allowed_tables) for field in plan.group_by]
+            group_items = [
+                self._compile_field_ref(field, scope_map, source_scope, allowed_tables) for field in plan.group_by
+            ]
             group_sql = f"GROUP BY {', '.join(group_items)}"
 
         order_sql = ""

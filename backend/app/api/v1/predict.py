@@ -13,7 +13,7 @@ from app.core.config.database import get_db
 from app.core.providers.llm_provider import create_llm_provider
 from app.dto.request import PredictRequest
 from app.repository.chat_memory import RedisChatMemory
-from app.services.extraction import ExtractionService
+from app.services.intent import IntentService
 from app.services.predict import PredictService
 from app.services.query_executor import QueryExecutor
 from app.services.query_tools import QueryToolFactory
@@ -60,11 +60,11 @@ def get_query_tool_factory(
     return QueryToolFactory(schema_service=schema_service, query_executor=query_executor)
 
 
-def get_extraction_service(
+def get_intent_service(
     provider: BaseChatModel = Depends(get_llm_provider),
     intent_policy: IntentPolicy = Depends(get_intent_policy),
-) -> ExtractionService:
-    return ExtractionService(provider=provider, intent_policy=intent_policy)
+) -> IntentService:
+    return IntentService(provider=provider, intent_policy=intent_policy)
 
 
 def get_chat_memory_repository() -> RedisChatMemory:
@@ -73,7 +73,7 @@ def get_chat_memory_repository() -> RedisChatMemory:
 
 def get_predict_service(
     provider: BaseChatModel = Depends(get_llm_provider),
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    intent_service: IntentService = Depends(get_intent_service),
     schema_service: SchemaService = Depends(get_schema_service),
     tool_factory: QueryToolFactory = Depends(get_query_tool_factory),
     intent_policy: IntentPolicy = Depends(get_intent_policy),
@@ -82,7 +82,7 @@ def get_predict_service(
 ) -> PredictService:
     return PredictService(
         provider=provider,
-        extraction_service=extraction_service,
+        intent_service=intent_service,
         schema_service=schema_service,
         tool_factory=tool_factory,
         intent_policy=intent_policy,

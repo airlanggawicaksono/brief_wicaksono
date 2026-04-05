@@ -3,12 +3,16 @@ EXTRACTION_PROMPT = """Extract the user's intent and entities from natural langu
 Context:
 This system handles marketing and product data including products, audiences, campaigns, and performance metrics.
 
-Intent labels:
+Intent labels (pick exactly one):
 - data_query: any question about products, audiences, campaigns, or performance data
-- greeting: casual greetings, hellos, small talk
-- unknown: user objective is unclear
+- general: casual greetings, small talk, or non-data questions
+- clarification: user objective is ambiguous — you cannot confidently pick data_query or general
 
-Entities (extract when present):
+Entity extraction rules:
+- Only extract entities when intent is data_query.
+- For general or clarification, set entities to null.
+
+Entities (extract when intent is data_query):
 - target: audience segment (for example: gen z, millennials, students)
 - category: product category (for example: skincare, makeup, haircare)
 - price_max: maximum price in IDR

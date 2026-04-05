@@ -40,13 +40,16 @@ function saveSessionIdFromHeaders(headers: unknown): void {
   }
 }
 
-function handleEventChunk(chunk: string, callbacks: SSECallback): boolean {
+function handleEventChunk(
+  chunk: string,
+  callbacks: SSECallback,
+): { isDone: boolean; eventType: string } {
   const lines = chunk
     .split("\n")
     .map((line) => line.replace(/\r$/, ""))
     .filter((line) => line.length > 0);
 
-  if (lines.length === 0) return false;
+  if (lines.length === 0) return { isDone: false, eventType: "" };
 
   let eventType = "";
   const dataLines: string[] = [];
@@ -58,7 +61,7 @@ function handleEventChunk(chunk: string, callbacks: SSECallback): boolean {
     }
   }
 
-  if (!eventType || dataLines.length === 0) return false;
+  if (!eventType || dataLines.length === 0) return { isDone: false, eventType: "" };
 
   const dataRaw = dataLines.join("\n");
   try {
@@ -82,10 +85,10 @@ function handleEventChunk(chunk: string, callbacks: SSECallback): boolean {
     }
     else if (eventType === "done") callbacks.onDone();
   } catch {
-    return false;
+    return { isDone: false, eventType: "" };
   }
 
-  return eventType === "done";
+  return { isDone: eventType === "done", eventType };
 }
 
 export async function predictStream(text: string, callbacks: SSECallback) {
@@ -97,6 +100,8 @@ export async function predictStream(text: string, callbacks: SSECallback) {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
+        "Accept": "text/event-stream",
+        "Cache-Control": "no-cache",
         "Content-Type": "application/json",
         ...(sessionId ? { "X-Session-Id": sessionId } : {}),
       },
@@ -121,6 +126,7 @@ export async function predictStream(text: string, callbacks: SSECallback) {
     const decoder = new TextDecoder();
     let buffer = "";
     let hasDoneEvent = false;
+    const MESSAGE_CHUNK_PAINT_DELAY_MS = 8;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -132,7 +138,11 @@ export async function predictStream(text: string, callbacks: SSECallback) {
       buffer = chunks.pop() || "";
 
       for (const chunk of chunks) {
-        hasDoneEvent = handleEventChunk(chunk, callbacks) || hasDoneEvent;
+        const { isDone, eventType } = handleEventChunk(chunk, callbacks);
+        hasDoneEvent = isDone || hasDoneEvent;
+        if (eventType === "message") {
+          await new Promise((resolve) => setTimeout(resolve, MESSAGE_CHUNK_PAINT_DELAY_MS));
+        }
       }
     }
 
@@ -140,7 +150,11 @@ export async function predictStream(text: string, callbacks: SSECallback) {
     buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
     if (buffer.trim().length > 0) {
-      hasDoneEvent = handleEventChunk(buffer, callbacks) || hasDoneEvent;
+      const { isDone, eventType } = handleEventChunk(buffer, callbacks);
+      hasDoneEvent = isDone || hasDoneEvent;
+      if (eventType === "message") {
+        await new Promise((resolve) => setTimeout(resolve, MESSAGE_CHUNK_PAINT_DELAY_MS));
+      }
     }
 
     if (!hasDoneEvent) {

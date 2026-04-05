@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from app.core.exceptions.base import BadRequestException
-from app.dto.query import QueryPlanV2
+from app.dto.query import QueryPlan
 
 
 @dataclass(frozen=True)
@@ -96,11 +96,11 @@ class QueryPolicy:
 
     def validate_plan_v2(
         self,
-        plan: QueryPlanV2,
+        plan: QueryPlan,
         schema_metadata: dict | None = None,
         *,
         depth: int = 0,
-    ) -> QueryPlanV2:
+    ) -> QueryPlan:
         if depth > 2:
             raise BadRequestException("Subquery depth exceeds policy limit")
 
@@ -130,8 +130,7 @@ class QueryPolicy:
             self._ensure_column_allowed(right_table, right_col, allowed_tables)
 
             valid_edge = any(
-                (left_table, right_table) == edge or (right_table, left_table) == edge
-                for edge in allowed_join_edges
+                (left_table, right_table) == edge or (right_table, left_table) == edge for edge in allowed_join_edges
             )
             if not valid_edge:
                 raise BadRequestException(f"Join path '{left_table} -> {right_table}' is not allowed")
@@ -204,13 +203,8 @@ class QueryPolicy:
             value = rel.get(key)
             if isinstance(value, str):
                 return value.strip().lower()
-            if all(
-                isinstance(rel.get(part), str)
-                for part in (f"{key}_schema", f"{key}_table", f"{key}_column")
-            ):
-                return (
-                    f"{rel[f'{key}_schema']}.{rel[f'{key}_table']}.{rel[f'{key}_column']}"
-                ).strip().lower()
+            if all(isinstance(rel.get(part), str) for part in (f"{key}_schema", f"{key}_table", f"{key}_column")):
+                return (f"{rel[f'{key}_schema']}.{rel[f'{key}_table']}.{rel[f'{key}_column']}").strip().lower()
         return None
 
     def _parse_column_ref(self, ref: str | None) -> tuple[str | None, str | None]:
@@ -222,7 +216,7 @@ class QueryPolicy:
         table = f"{tokens[0]}.{tokens[1]}"
         return table, tokens[2]
 
-    def _collect_projected_names(self, plan: QueryPlanV2) -> set[str]:
+    def _collect_projected_names(self, plan: QueryPlan) -> set[str]:
         projected: set[str] = set()
         for item in plan.select:
             if item.field == "*":

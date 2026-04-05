@@ -3,7 +3,7 @@ from typing import Literal
 from langchain_core.tools import tool
 
 from app.core.exceptions.base import AppException, BadRequestException
-from app.dto.query import QueryPlanV2
+from app.dto.query import QueryPlan
 from app.services.query_executor import QueryExecutor
 from app.services.schema import SchemaService
 
@@ -33,7 +33,7 @@ class QueryToolFactory:
         ) -> dict:
             """Inspect schema metadata and query constraints before planning a query.
 
-            Always call this before query_table and pass snapshot_hash back in QueryPlanV2.metadata_hash.
+            Always call this before query_table and pass snapshot_hash back in QueryPlan.metadata_hash.
             """
             normalized_detail = detail_level.lower().strip()
             detail: Literal["summary", "full"] = "summary"
@@ -45,10 +45,10 @@ class QueryToolFactory:
         def query_table(plan: dict) -> dict:
             """Execute a read-only structured query plan.
 
-            The plan must follow QueryPlanV2 and include metadata_hash from lookup_schema.
+            The plan must follow QueryPlan and include metadata_hash from lookup_schema.
             """
             try:
-                parsed_plan = QueryPlanV2.model_validate(plan)
+                parsed_plan = QueryPlan.model_validate(plan)
             except Exception as exc:
                 return {"error": {"code": "invalid_plan_payload", "message": str(exc)}}
 

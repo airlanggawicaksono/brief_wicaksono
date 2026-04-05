@@ -1,8 +1,7 @@
-from uuid import uuid4
 from functools import lru_cache
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, Request
 from langchain_core.language_models.chat_models import BaseChatModel
 from sqlalchemy.orm import Session
 
@@ -17,13 +16,10 @@ from app.services.agent.executor import ToolExecutor
 from app.services.agent.message import MessageBuilder
 from app.services.intent import IntentService
 from app.services.predict import PredictService
-from app.services.predict.dto import PredictRequest
 from app.services.predict.presenter import SsePresenter
 from app.services.predict.steps import AgentStep, DirectResponseStep, IntentStep
 from app.services.tools import build_tool_context, get_tools
 from app.services.tools.schema import SchemaService
-
-router = APIRouter(prefix="/predict", tags=["predict"])
 
 
 @lru_cache(maxsize=1)
@@ -83,6 +79,16 @@ def get_agent_service(
     )
 
 
+def get_session_id(request: Request) -> str:
+    header_id = request.headers.get("X-Session-Id")
+    if header_id and header_id.strip():
+        return header_id.strip()
+    cookie_id = request.cookies.get("session_id")
+    if cookie_id and cookie_id.strip():
+        return cookie_id.strip()
+    return str(uuid4())
+
+
 def get_predict_service(
     provider: BaseChatModel = Depends(get_llm_provider),
     intent_service: IntentService = Depends(get_intent_service),
@@ -97,45 +103,3 @@ def get_predict_service(
         chat_memory=chat_memory,
         presenter=SsePresenter(),
     )
-
-
-def _resolve_session_id(request: Request) -> str:
-    header_id = request.headers.get("X-Session-Id")
-    if header_id and header_id.strip():
-        return header_id.strip()
-
-    cookie_id = request.cookies.get("session_id")
-    if cookie_id and cookie_id.strip():
-        return cookie_id.strip()
-
-    return str(uuid4())
-
-
-@router.post("")
-def predict(
-    body: PredictRequest,
-    request: Request,
-    service: PredictService = Depends(get_predict_service),
-):
-    session_id = _resolve_session_id(request)
-    response = StreamingResponse(
-        service.run_stream(body.text, session_id=session_id),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "X-Session-Id": session_id,
-        },
-    )
-    response.set_cookie("session_id", session_id, httponly=False, samesite="lax")
-    return response
-
-
-@router.get("/history")
-def get_history(
-    request: Request,
-    limit: int = 20,
-    service: PredictService = Depends(get_predict_service),
-):
-    session_id = _resolve_session_id(request)
-    return service.list_session_history(session_id=session_id, limit=limit)

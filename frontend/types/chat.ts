@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { Extraction, PredictResult, ProcessStep, ToolResult } from "./predict";
+import type { Extraction, PredictResult, ProcessEvent, ToolCall } from "./predict";
 import React from "react";
 
 export interface Message {
@@ -7,8 +7,8 @@ export interface Message {
   content: string;
   extraction?: Extraction;
   result?: PredictResult;
-  process?: ProcessStep[];
-  toolCalls?: ToolResult[];
+  process?: ProcessEvent[];
+  toolCalls?: ToolCall[];
   loading?: boolean;
 }
 

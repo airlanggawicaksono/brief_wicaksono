@@ -3,46 +3,35 @@
 import { useRef, useState, useEffect } from "react";
 import { predictStream } from "@/api/predict";
 import type { Message, UseChatReturn } from "@/types/chat";
-import type { ProcessStep, ToolResult } from "@/types/predict";
+import type { ProcessEvent, ToolCall } from "@/types/predict";
 
-function sameStep(a: ProcessStep, b: ProcessStep): boolean {
+function sameStep(a: ProcessEvent, b: ProcessEvent): boolean {
   if (!a || !b) return false;
-  return (
-    a.stage === b.stage &&
-    a.title === b.title &&
-    a.detail === b.detail
-  );
+  return a.stage === b.stage && a.title === b.title && a.detail === b.detail;
 }
 
-function dedupeSteps(steps: ProcessStep[]): ProcessStep[] {
-  const out: ProcessStep[] = [];
+function dedupeSteps(steps: ProcessEvent[]): ProcessEvent[] {
+  const out: ProcessEvent[] = [];
   for (const step of steps ?? []) {
     if (!step || typeof step !== "object") continue;
-    const exists = out.some((item) => sameStep(item, step));
-    if (!exists) out.push(step);
+    if (!out.some((item) => sameStep(item, step))) out.push(step);
   }
   return out;
 }
 
 function stableStringify(value: unknown): string {
   const canonicalize = (input: unknown): unknown => {
-    if (Array.isArray(input)) {
-      return input.map((item) => canonicalize(item));
-    }
+    if (Array.isArray(input)) return input.map(canonicalize);
     if (input && typeof input === "object") {
-      const source = input as Record<string, unknown>;
-      const output: Record<string, unknown> = {};
-      for (const key of Object.keys(source).sort()) {
-        const raw = source[key];
-        if (raw !== undefined) {
-          output[key] = canonicalize(raw);
-        }
+      const src = input as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(src).sort()) {
+        if (src[key] !== undefined) out[key] = canonicalize(src[key]);
       }
-      return output;
+      return out;
     }
     return input ?? null;
   };
-
   try {
     return JSON.stringify(canonicalize(value));
   } catch {
@@ -50,16 +39,15 @@ function stableStringify(value: unknown): string {
   }
 }
 
-function toolKey(tool: ToolResult): string {
-  const name = typeof tool.tool === "string" ? tool.tool : "tool";
-  return `${name}::${stableStringify(tool.args)}`;
+function toolKey(tool: ToolCall): string {
+  return `${tool.tool}::${stableStringify(tool.args)}`;
 }
 
-function dedupeToolCalls(calls: ToolResult[]): ToolResult[] {
-  const map = new Map<string, ToolResult>();
+function dedupeToolCalls(calls: ToolCall[]): ToolCall[] {
+  const map = new Map<string, ToolCall>();
   for (const call of calls) {
     if (!call || typeof call !== "object") continue;
-    if (!("tool" in call) || typeof call.tool !== "string") continue;
+    if (typeof call.tool !== "string") continue;
     map.set(toolKey(call), call);
   }
   return Array.from(map.values());
@@ -123,37 +111,44 @@ export function useChat(): UseChatReturn {
         if (!extraction || typeof extraction !== "object") return;
         update((msg) => {
           msg.extraction = extraction;
+          const step: ProcessEvent = {
+            stage: "intent_detected",
+            title: "Intent detected",
+            detail: typeof extraction.intent === "string" ? extraction.intent : "",
+            timestamp: new Date().toISOString(),
+            data: extraction,
+          };
+          const current = msg.process ?? [];
+          if (!current.some((item) => item.stage === "intent_detected")) {
+            msg.process = [...current, step];
+          }
         });
       },
       onProcess: (step) => {
         if (!step || typeof step !== "object") return;
         update((msg) => {
           const current = msg.process ?? [];
-          const exists = current.some((item) => sameStep(item, step));
-          if (!exists) {
+          if (!current.some((item) => sameStep(item, step))) {
             msg.process = [...current, step];
           }
         });
       },
-      onToolStart: (tool: ToolResult) => {
-        if (!tool || typeof tool !== "object") return;
-        if (!("tool" in tool) || typeof tool.tool !== "string") return;
+      onToolStart: (tool: ToolCall) => {
+        if (!tool || typeof tool !== "object" || typeof tool.tool !== "string") return;
         update((msg) => {
           const calls = msg.toolCalls ?? [];
           const key = toolKey(tool);
-          const existingIndex = calls.findIndex((item) => toolKey(item) === key);
-          if (existingIndex >= 0) {
-            calls[existingIndex] = { ...calls[existingIndex], ...tool, loading: true };
+          const idx = calls.findIndex((item) => toolKey(item) === key);
+          if (idx >= 0) {
+            calls[idx] = { ...calls[idx], ...tool, loading: true };
             msg.toolCalls = [...calls];
-            return;
+          } else {
+            msg.toolCalls = [...calls, { ...tool, loading: true }];
           }
-
-          msg.toolCalls = [...calls, { ...tool, loading: true }];
         });
       },
-      onToolEnd: (tool: ToolResult) => {
-        if (!tool || typeof tool !== "object") return;
-        if (!("tool" in tool) || typeof tool.tool !== "string") return;
+      onToolEnd: (tool: ToolCall) => {
+        if (!tool || typeof tool !== "object" || typeof tool.tool !== "string") return;
         update((msg) => {
           const calls = msg.toolCalls ?? [];
           const key = toolKey(tool);
@@ -162,48 +157,41 @@ export function useChat(): UseChatReturn {
             calls[idx] = { ...calls[idx], ...tool, loading: false };
             msg.toolCalls = dedupeToolCalls([...calls]);
           } else {
-            const existingIndex = calls.findIndex((item) => toolKey(item) === key);
-            if (existingIndex >= 0) {
-              calls[existingIndex] = { ...calls[existingIndex], ...tool, loading: false };
+            const existingIdx = calls.findIndex((item) => toolKey(item) === key);
+            if (existingIdx >= 0) {
+              calls[existingIdx] = { ...calls[existingIdx], ...tool, loading: false };
               msg.toolCalls = dedupeToolCalls([...calls]);
-              return;
+            } else {
+              msg.toolCalls = dedupeToolCalls([...calls, { ...tool, loading: false }]);
             }
-            msg.toolCalls = dedupeToolCalls([...calls, { ...tool, loading: false }]);
           }
         });
       },
       onMessage: (message: string) => {
         if (typeof message !== "string") return;
-        update((msg) => {
-          msg.content = message;
-        });
+        update((msg) => { msg.content = message; });
       },
       onResult: (result) => {
         if (!result || typeof result !== "object") return;
         update((msg) => {
           msg.result = result;
           msg.process = dedupeSteps(Array.isArray(result.process) ? result.process : []);
-          const hasStreamedContent =
-            typeof msg.content === "string" && msg.content.trim().length > 0;
-          if (!hasStreamedContent && typeof result.message === "string") {
-            msg.content = result.message;
+          if (!(typeof msg.content === "string" && msg.content.trim().length > 0)) {
+            if (typeof result.message === "string") msg.content = result.message;
           }
-
           const resultTools = Array.isArray(result.tool_results) ? result.tool_results : [];
           if (resultTools.length > 0) {
-            const normalizedResultTools = resultTools
-              .filter((item): item is ToolResult => Boolean(item) && typeof item === "object")
+            const normalized = resultTools
+              .filter((item): item is ToolCall => Boolean(item) && typeof item === "object")
               .map((item) => ({ ...item, loading: false }));
-            msg.toolCalls = dedupeToolCalls([...(msg.toolCalls ?? []), ...normalizedResultTools]);
+            msg.toolCalls = dedupeToolCalls([...(msg.toolCalls ?? []), ...normalized]);
           } else if (!Array.isArray(msg.toolCalls)) {
             msg.toolCalls = [];
           }
         });
       },
       onDone: () => {
-        update((msg) => {
-          msg.loading = false;
-        });
+        update((msg) => { msg.loading = false; });
         setLoading(false);
       },
       onError: (err) => {

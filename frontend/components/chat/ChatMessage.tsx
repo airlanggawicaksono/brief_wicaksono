@@ -200,11 +200,33 @@ export function ChatMessage({ msg }: ChatMessageProps) {
                 const title = typeof step.title === "string" ? step.title : "Step";
                 const detail = typeof step.detail === "string" ? step.detail : "";
 
+                let entities: Array<[string, string]> = [];
+                if (stage === "intent_detected" && isPlainObject(step.data)) {
+                  const raw = step.data as JsonObject;
+                  const ents = isPlainObject(raw.entities) ? raw.entities as JsonObject : null;
+                  if (ents) {
+                    for (const [k, v] of Object.entries(ents)) {
+                      if (v != null) entities.push([k, String(v)]);
+                    }
+                  }
+                }
+
                 return (
-                  <div key={`${stage}-${i}`} className="flex items-center gap-2">
-                    <span className="h-1 w-1 shrink-0 rounded-full bg-gray-300" />
-                    <span>{title}</span>
-                    {detail && <span className="text-gray-300">{detail}</span>}
+                  <div key={`${stage}-${i}`} className="step-enter flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="h-1 w-1 shrink-0 rounded-full bg-gray-300" />
+                      <span>{title}</span>
+                      {detail && <span className="text-gray-300">{detail}</span>}
+                    </div>
+                    {entities.length > 0 && (
+                      <div className="ml-3 flex flex-wrap gap-1">
+                        {entities.map(([k, v]) => (
+                          <span key={k} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+                            {k}: <span className="font-medium text-gray-700">{v}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

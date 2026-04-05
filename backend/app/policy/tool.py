@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from app.core.intents import Intent
+from app.core.enums.intents import Intent
 
 
 @dataclass(frozen=True)

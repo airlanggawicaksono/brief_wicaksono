@@ -1,4 +1,4 @@
-import type { Extraction, PredictResult, ProcessStep, SSECallback, ToolResult } from "@/types/predict";
+import type { Extraction, PredictResult, ProcessEvent, SSECallback, ToolCall } from "@/types/predict";
 
 const SESSION_STORAGE_KEY = "wpp_session_id";
 
@@ -71,11 +71,11 @@ function handleEventChunk(
     if (eventType === "extraction") {
       if (isObject) callbacks.onExtraction?.(data as Extraction);
     } else if (eventType === "process") {
-      if (isObject) callbacks.onProcess?.(data as ProcessStep);
+      if (isObject) callbacks.onProcess?.(data as ProcessEvent);
     } else if (eventType === "tool_start") {
-      if (isObject) callbacks.onToolStart?.(data as ToolResult);
+      if (isObject) callbacks.onToolStart?.(data as ToolCall);
     } else if (eventType === "tool_end") {
-      if (isObject) callbacks.onToolEnd?.(data as ToolResult);
+      if (isObject) callbacks.onToolEnd?.(data as ToolCall);
     } else if (eventType === "message") {
       if (typeof data === "string") callbacks.onMessage?.(data);
     } else if (eventType === "result") {

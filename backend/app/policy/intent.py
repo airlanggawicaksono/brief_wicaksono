@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from app.core.intents import Intent
+from backend.app.core.enums.intents import Intent
 
 
 @dataclass(frozen=True)
@@ -9,9 +9,7 @@ class IntentPolicy:
 
     data_intents: set[str] = field(default_factory=lambda: {Intent.DATA_QUERY})
 
-    conversational_intents: set[str] = field(
-        default_factory=lambda: {Intent.GENERAL, Intent.CLARIFICATION}
-    )
+    conversational_intents: set[str] = field(default_factory=lambda: {Intent.GENERAL, Intent.CLARIFICATION})
 
     @property
     def all_intents(self) -> set[str]:

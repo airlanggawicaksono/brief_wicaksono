@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { flushSync } from "react-dom";
 import { predictStream } from "@/api/predict";
 import type { Message, UseChatReturn } from "@/types/chat";
 import type { ProcessStep, ToolResult } from "@/types/predict";
@@ -175,19 +174,8 @@ export function useChat(): UseChatReturn {
       },
       onMessage: (message: string) => {
         if (typeof message !== "string") return;
-        flushSync(() => {
-          update((msg) => {
-            const current = typeof msg.content === "string" ? msg.content : "";
-            if (!current) {
-              msg.content = message;
-              return;
-            }
-            if (message.startsWith(current) || message.length >= current.length) {
-              msg.content = message;
-              return;
-            }
-            msg.content = `${current}${message}`;
-          });
+        update((msg) => {
+          msg.content = message;
         });
       },
       onResult: (result) => {

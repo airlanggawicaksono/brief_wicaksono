@@ -187,106 +187,119 @@ export function ChatMessage({ msg }: ChatMessageProps) {
 
         {process.length > 0 && (
           <div className="space-y-1 text-xs text-gray-400">
-            {process.map((step, i) => {
-              if (!step || typeof step !== "object") return null;
-              const stage = typeof step.stage === "string" ? step.stage : `step-${i}`;
-              const title = typeof step.title === "string" ? step.title : "Step";
-              const detail = typeof step.detail === "string" ? step.detail : "";
+            {process
+              .filter((step) => {
+                if (!step || typeof step !== "object") return false;
+                const stage = typeof step.stage === "string" ? step.stage : "";
+                if (stage === "failed") return false;
+                if (stage === "response_ready") return false;
+                return true;
+              })
+              .map((step, i) => {
+                const stage = typeof step.stage === "string" ? step.stage : `step-${i}`;
+                const title = typeof step.title === "string" ? step.title : "Step";
+                const detail = typeof step.detail === "string" ? step.detail : "";
 
-              return (
-                <div key={`${stage}-${i}`} className="flex items-center gap-2">
-                  <span className="h-1 w-1 shrink-0 rounded-full bg-gray-300" />
-                  <span>{title}</span>
-                  {detail && <span className="text-gray-300">{detail}</span>}
-                </div>
-              );
-            })}
+                return (
+                  <div key={`${stage}-${i}`} className="flex items-center gap-2">
+                    <span className="h-1 w-1 shrink-0 rounded-full bg-gray-300" />
+                    <span>{title}</span>
+                    {detail && <span className="text-gray-300">{detail}</span>}
+                  </div>
+                );
+              })}
           </div>
         )}
 
         {toolCalls.length > 0 && (
           <div className="space-y-2">
-            {toolCalls.map((tc, i) => {
-              if (!tc || typeof tc !== "object") return null;
-              const toolName = typeof tc.tool === "string" ? tc.tool : "tool";
-              const isLoading = Boolean(tc.loading);
-              const hasData = tc.data !== null && tc.data !== undefined;
+            {toolCalls
+              .filter((tc) => {
+                if (!tc || typeof tc !== "object") return false;
+                const raw = tc as unknown as JsonObject;
+                if (raw.error === true) return false;
+                return true;
+              })
+              .map((tc, i) => {
+                const toolName = typeof tc.tool === "string" ? tc.tool : "tool";
+                const isLoading = Boolean(tc.loading);
+                const hasData = tc.data !== null && tc.data !== undefined;
 
-              let preview = "";
-              if (hasData) {
-                try {
-                  preview = JSON.stringify(tc.data, null, 2).slice(0, 500);
-                } catch {
-                  preview = String(tc.data);
+                let preview = "";
+                if (hasData) {
+                  try {
+                    preview = JSON.stringify(tc.data, null, 2).slice(0, 500);
+                  } catch {
+                    preview = String(tc.data);
+                  }
                 }
-              }
-              const tableData = hasData ? toTableData(tc.data) : null;
+                const tableData = hasData ? toTableData(tc.data) : null;
 
-              return (
-                <details
-                  key={`${toolName}-${i}`}
-                  className="rounded-xl border border-gray-200 bg-gray-50/50"
-                  open={isLoading}
-                >
-                  <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs">
-                    {isLoading ? (
-                      <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
-                    ) : (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
-                    )}
-                    <span className="font-medium text-gray-700">{toolName}</span>
+                return (
+                  <details
+                    key={`${toolName}-${i}`}
+                    className="rounded-xl border border-gray-200 bg-gray-50/50"
+                    open={isLoading}
+                  >
+                    <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs">
+                      {isLoading ? (
+                        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
+                      ) : (
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                      )}
+                      <span className="font-medium text-gray-700">{toolName}</span>
+                      {!isLoading && hasData && (
+                        <span className="text-gray-400">
+                          {Array.isArray(tc.data)
+                            ? `${tc.data.length} row${tc.data.length !== 1 ? "s" : ""}`
+                            : "done"}
+                        </span>
+                      )}
+                      {isLoading && <span className="text-gray-400">running...</span>}
+                    </summary>
                     {!isLoading && hasData && (
-                      <span className="text-gray-400">
-                        {Array.isArray(tc.data)
-                          ? `${tc.data.length} row${tc.data.length !== 1 ? "s" : ""}`
-                          : "done"}
-                      </span>
-                    )}
-                    {isLoading && <span className="text-gray-400">running...</span>}
-                  </summary>
-                  {!isLoading && hasData && (
-                    <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
-                      {tableData ? (
-                        <div className="overflow-auto rounded-md border border-gray-200">
-                          {tableData.rows.length === 0 ? (
-                            <div className="px-3 py-2 text-xs text-gray-400">No rows</div>
-                          ) : (
-                            <table className="min-w-full border-collapse text-left text-xs">
-                              <thead className="bg-gray-100 text-gray-600">
-                                <tr>
-                                  {tableData.columns.map((column) => (
-                                    <th key={column} className="border-b border-gray-200 px-2 py-1.5 font-medium">
-                                      {column}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody className="text-gray-700">
-                                {tableData.rows.map((row, rowIndex) => (
-                                  <tr key={`${toolName}-row-${rowIndex}`} className="border-b border-gray-100 last:border-b-0">
+                      <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
+                        {tableData ? (
+                          <div className="overflow-auto rounded-md border border-gray-200">
+                            {tableData.rows.length === 0 ? (
+                              <div className="px-3 py-2 text-xs text-gray-400">No rows</div>
+                            ) : (
+                              <table className="min-w-full border-collapse text-left text-xs">
+                                <thead className="bg-gray-100 text-gray-600">
+                                  <tr>
                                     {tableData.columns.map((column) => (
-                                      <td key={`${toolName}-${rowIndex}-${column}`} className="max-w-[280px] px-2 py-1.5 align-top">
-                                        <span className="line-clamp-4 break-words">
-                                          {safeValue(row[column])}
-                                        </span>
-                                      </td>
+                                      <th key={column} className="border-b border-gray-200 px-2 py-1.5 font-medium">
+                                        {column}
+                                      </th>
                                     ))}
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-                      ) : (
-                        <pre className="max-h-40 overflow-auto whitespace-pre-wrap">
-                          {preview}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-                </details>
-              );
-            })}
+                                </thead>
+                                <tbody className="text-gray-700">
+                                  {tableData.rows.map((row, rowIndex) => (
+                                    <tr key={`${toolName}-row-${rowIndex}`} className="border-b border-gray-100 last:border-b-0">
+                                      {tableData.columns.map((column) => (
+                                        <td key={`${toolName}-${rowIndex}-${column}`} className="max-w-[280px] px-2 py-1.5 align-top">
+                                          <span className="line-clamp-4 break-words">
+                                            {safeValue(row[column])}
+                                          </span>
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        ) : (
+                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap">
+                            {preview}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+                  </details>
+                );
+              })}
           </div>
         )}
 

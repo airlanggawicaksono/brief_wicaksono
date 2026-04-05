@@ -126,7 +126,6 @@ export async function predictStream(text: string, callbacks: SSECallback) {
     const decoder = new TextDecoder();
     let buffer = "";
     let hasDoneEvent = false;
-    const MESSAGE_CHUNK_PAINT_DELAY_MS = 8;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -138,11 +137,8 @@ export async function predictStream(text: string, callbacks: SSECallback) {
       buffer = chunks.pop() || "";
 
       for (const chunk of chunks) {
-        const { isDone, eventType } = handleEventChunk(chunk, callbacks);
+        const { isDone } = handleEventChunk(chunk, callbacks);
         hasDoneEvent = isDone || hasDoneEvent;
-        if (eventType === "message") {
-          await new Promise((resolve) => setTimeout(resolve, MESSAGE_CHUNK_PAINT_DELAY_MS));
-        }
       }
     }
 
@@ -150,11 +146,8 @@ export async function predictStream(text: string, callbacks: SSECallback) {
     buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
     if (buffer.trim().length > 0) {
-      const { isDone, eventType } = handleEventChunk(buffer, callbacks);
+      const { isDone } = handleEventChunk(buffer, callbacks);
       hasDoneEvent = isDone || hasDoneEvent;
-      if (eventType === "message") {
-        await new Promise((resolve) => setTimeout(resolve, MESSAGE_CHUNK_PAINT_DELAY_MS));
-      }
     }
 
     if (!hasDoneEvent) {

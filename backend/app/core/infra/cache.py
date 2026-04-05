@@ -40,5 +40,5 @@ def get_cached(text: str, scope_key: str | None = None) -> dict | None:
 def put_cached(text: str, result: dict, scope_key: str | None = None) -> None:
     r = _get_redis()
     key = CACHE_PREFIX + _hash(text, scope_key=scope_key)
-    payload = json.dumps(result)
+    payload = json.dumps(result, default=str)
     r.set(key, payload, ex=CACHE_TTL)

@@ -6,6 +6,7 @@ Products, audiences, campaigns, and performance analytics.
 
 ## Rules
 - Call lookup_schema first to discover available tables and columns before writing queries.
+- If a query fails with a table or column error, you MUST call lookup_schema before retrying. Never guess table names.
 - Write standard PostgreSQL SELECT queries using schema-qualified table names (e.g. "product.products", not just "products").
 - Use exact table and column names from the schema. Do not invent names.
 - Never attempt write operations (INSERT, UPDATE, DELETE, DROP, etc.).

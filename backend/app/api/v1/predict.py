@@ -13,9 +13,13 @@ from app.policy.query import QueryPolicy
 from app.policy.tool import ToolPolicy
 from app.repository.chat_memory import RedisChatMemory
 from app.services.agent import AgentService
+from app.services.agent.executor import ToolExecutor
+from app.services.agent.message import MessageBuilder
 from app.services.intent import IntentService
 from app.services.predict import PredictService
 from app.services.predict.dto import PredictRequest
+from app.services.predict.presenter import SsePresenter
+from app.services.predict.steps import AgentStep, DirectResponseStep, IntentStep
 from app.services.tools import build_tool_context, get_tools
 from app.services.tools.schema import SchemaService
 
@@ -73,9 +77,9 @@ def get_agent_service(
 ) -> AgentService:
     return AgentService(
         provider=provider,
-        tools=tools,
         tool_policy=tool_policy,
-        tool_context=build_tool_context(query_policy),
+        message_builder=MessageBuilder(tool_context=build_tool_context(query_policy)),
+        executor=ToolExecutor(tools),
     )
 
 
@@ -87,11 +91,11 @@ def get_predict_service(
     chat_memory: RedisChatMemory = Depends(get_chat_memory_repository),
 ) -> PredictService:
     return PredictService(
-        provider=provider,
-        intent_service=intent_service,
-        agent_service=agent_service,
-        intent_policy=intent_policy,
+        intent_step=IntentStep(intent_service, intent_policy),
+        agent_step=AgentStep(agent_service),
+        direct_step=DirectResponseStep(provider),
         chat_memory=chat_memory,
+        presenter=SsePresenter(),
     )
 
 

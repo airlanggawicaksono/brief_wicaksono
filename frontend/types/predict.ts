@@ -13,7 +13,8 @@ export interface ProcessStep {
   stage: string;
   title: string;
   detail: string;
-  timestamp: string;
+  timestamp?: string;
+  data?: unknown;
 }
 
 export interface ToolResult {

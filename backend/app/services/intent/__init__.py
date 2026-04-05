@@ -1,3 +1,5 @@
+import warnings
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -26,7 +28,10 @@ class IntentService:
             SystemMessage(content=INTENT_DETECTION_PROMPT),
             HumanMessage(content=text),
         ]
-        result = self._coerce_response(self.structured_llm.invoke(messages))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
+            raw = self.structured_llm.invoke(messages)
+        result = self._coerce_response(raw)
         result.intent = self.intent_policy.normalize(result.intent)
         return result
 

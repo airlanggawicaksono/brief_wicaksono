@@ -1,159 +1,78 @@
-import json
 from collections.abc import Generator
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
-from app.core.intents import Intent
 from app.core.infra.cache import get_cached, put_cached
-from app.policy.intent import IntentPolicy
-from app.prompts.clarification import CLARIFICATION_PROMPT
-from app.prompts.general import GENERAL_PROMPT
-from app.prompts.summarize import EMPTY_RESPONSE_RETRY
 from app.repository.chat_memory import RedisChatMemory
-from app.services.agent import AgentService
-from app.services.agent.dto import ToolExecution
-from app.services.intent import IntentService
-from app.services.predict.dto import PredictResult, ProcessStep
+from app.services.predict.dto import (
+    ProcessEvent,
+    PredictResult,
+    RequestContext,
+)
+from app.services.predict.presenter import SsePresenter
+from app.services.predict.steps import AgentStep, DirectResponseStep, IntentStep
 
 
 class PredictService:
-    """Orchestrator: detect intent -> delegate to agent or direct LLM -> stream SSE."""
+    """Orchestrator: chains steps, forwards events through presenter."""
 
     def __init__(
         self,
-        provider: BaseChatModel,
-        intent_service: IntentService,
-        agent_service: AgentService,
-        intent_policy: IntentPolicy,
+        intent_step: IntentStep,
+        agent_step: AgentStep,
+        direct_step: DirectResponseStep,
         chat_memory: RedisChatMemory,
+        presenter: SsePresenter,
     ):
-        self.provider = provider
-        self.intent_service = intent_service
-        self.agent_service = agent_service
-        self.intent_policy = intent_policy
+        self.intent_step = intent_step
+        self.agent_step = agent_step
+        self.direct_step = direct_step
         self.chat_memory = chat_memory
+        self.presenter = presenter
 
     def run_stream(self, text: str, session_id: str) -> Generator[str]:
-        cached = get_cached(text, scope_key=session_id)
-        if cached:
-            try:
-                cached_result = PredictResult.model_validate(cached)
-                yield f"event: cached\ndata: {cached_result.model_dump_json(warnings=False)}\n\n"
-                yield "event: done\ndata: {}\n\n"
-                return
-            except ValidationError:
-                pass
-
-        process: list[ProcessStep] = []
-        event_buffer: list[str] = []
-
-        def emit_process(stage: str, title: str, detail: str) -> None:
-            exists = any(item.stage == stage and item.detail == detail for item in process)
-            if exists:
-                return
-            step = ProcessStep(stage=stage, title=title, detail=detail)
-            process.append(step)
-            event_buffer.append(f"event: process\ndata: {step.model_dump_json(warnings=False)}\n\n")
-
-        def flush_events() -> Generator[str]:
-            while event_buffer:
-                yield event_buffer.pop(0)
-
-        emit_process("received_input", "Received input", "Starting intent detection.")
-        yield from flush_events()
-
-        extraction = self.intent_service.detect(text)
-        yield f"event: extraction\ndata: {extraction.model_dump_json(warnings=False)}\n\n"
-
-        emit_process("intent_detected", "Intent detected", "Intent classification complete.")
-        yield from flush_events()
-
         history = self.chat_memory.load_messages(session_id=session_id, limit=20)
-        tool_results: list[ToolExecution] = []
-        message = ""
-        mode = "direct"
+        ctx = RequestContext(session_id=session_id, text=text, history=history)
 
-        is_data_intent = self.intent_policy.is_data_intent(extraction.intent)
-        if is_data_intent:
-            emit_process("agent_started", "Agent started", "Agent is analyzing the request and selecting tools.")
-            yield from flush_events()
+        cached = self._try_cache(ctx)
+        if cached:
+            yield self.presenter.cached(cached)
+            yield self.presenter.done()
+            return
 
-            for item in self.agent_service.execute(text, history, intent=extraction.intent):
-                if isinstance(item, ToolExecution):
-                    if item.data is None:
-                        if item.tool == "query_table":
-                            emit_process(
-                                "validate",
-                                "Validating query plan",
-                                "Validating plan against current schema metadata.",
-                            )
-                            yield from flush_events()
-                        yield f"event: tool_start\ndata: {item.model_dump_json(warnings=False)}\n\n"
-                        continue
+        all_events: list[ProcessEvent] = []
 
-                    tool_results.append(item)
-                    yield f"event: tool_end\ndata: {item.model_dump_json(warnings=False)}\n\n"
+        intent_result = self.intent_step.run(ctx)
+        yield from self._emit(intent_result.events, all_events)
+        if not intent_result.ok:
+            yield self.presenter.done()
+            return
+        extraction = intent_result.output
 
-                    if item.tool == "lookup_schema":
-                        emit_process("lookup_schema", "Schema metadata refreshed", "LLM refreshed schema context.")
-                        yield from flush_events()
-
-                    if item.tool == "query_table" and isinstance(item.data, dict):
-                        error_payload = item.data.get("error")
-                        if error_payload:
-                            error_msg = _extract_error_message(error_payload)
-                            emit_process("validate", "Plan rejected, replanning", error_msg)
-                        else:
-                            mode = "query_table"
-                            row_count = item.data.get("row_count")
-                            emit_process(
-                                "execute",
-                                "Query executed",
-                                f"Returned {row_count if isinstance(row_count, int) else 0} row(s).",
-                            )
-                        yield from flush_events()
-                    continue
-
-                if isinstance(item, str):
-                    message = item
-                    yield f"event: message\ndata: {json.dumps(message)}\n\n"
-
-            if tool_results:
-                emit_process("tools_executed", "Tools executed", ", ".join(t.tool for t in tool_results))
-            else:
-                emit_process("direct_response", "Direct response", "No data tool execution was needed.")
-            emit_process("summarize", "Summarizing result", "Preparing final response for the user.")
-            emit_process("response_ready", "Response generated", "Done.")
+        if self.intent_step.intent_policy.is_data_intent(extraction.intent):
+            agent_result = self.agent_step.run(extraction, ctx)
+            yield from self._emit(agent_result.events, all_events)
+            tool_results = agent_result.output["tool_results"] if agent_result.ok else []
+            message = agent_result.output["message"] if agent_result.ok else ""
+            mode = "query_table" if tool_results else "direct"
         else:
-            emit_process("direct_response", "Direct response", "No data tool execution was needed.")
-            emit_process("summarize", "Summarizing result", "Preparing final response for the user.")
-            emit_process("response_ready", "Response generated", "Done.")
-            yield from flush_events()
-
-            message = self._build_non_data_message(text, extraction.intent, history)
-            yield f"event: message\ndata: {json.dumps(message)}\n\n"
-
-        yield from flush_events()
+            direct_result = self.direct_step.run(extraction, ctx)
+            yield from self._emit(direct_result.events, all_events)
+            tool_results = []
+            message = direct_result.output or ""
+            mode = "direct"
 
         result = PredictResult(
             input=text,
             extraction=extraction,
             mode=mode,
             tool_results=tool_results,
-            process=process,
+            process=all_events,
             message=message,
         )
-        put_cached(text, result.model_dump(warnings=False), scope_key=session_id)
-        self.chat_memory.append_turn(
-            session_id=session_id,
-            user_text=text,
-            assistant_text=message,
-        )
-
-        yield f"event: result\ndata: {result.model_dump_json(warnings=False)}\n\n"
-        yield "event: done\ndata: {}\n\n"
+        self._cache_and_save(ctx, result, message)
+        yield self.presenter.result(result)
+        yield self.presenter.done()
 
     def list_session_history(self, session_id: str, limit: int = 20) -> list[dict]:
         messages = self.chat_memory.load_messages(session_id=session_id, limit=max(1, limit))
@@ -177,62 +96,24 @@ class PredictService:
             turns.append({"input": user_text, "message": assistant_text})
         return turns
 
-    def _build_non_data_message(self, text: str, intent: str, history: list | None = None) -> str:
-        system_content = CLARIFICATION_PROMPT if intent == Intent.CLARIFICATION else GENERAL_PROMPT
+    def _emit(self, events: list[ProcessEvent], collector: list) -> Generator[str]:
+        for event in events:
+            collector.append(event)
+            yield self.presenter.render(event)
 
-        messages: list = [
-            SystemMessage(content=system_content),
-        ]
+    def _try_cache(self, ctx: RequestContext) -> PredictResult | None:
+        cached = get_cached(ctx.text, scope_key=ctx.session_id)
+        if cached:
+            try:
+                return PredictResult.model_validate(cached)
+            except ValidationError:
+                return None
+        return None
 
-        if history:
-            for entry in history:
-                if entry["role"] == "user":
-                    messages.append(HumanMessage(content=entry["content"]))
-                elif entry["role"] == "assistant":
-                    messages.append(AIMessage(content=entry["content"]))
-
-        messages.append(HumanMessage(content=text))
-        response = self.provider.invoke(messages)
-        content = _content_to_text(response.content)
-        if content:
-            return content
-
-        retry_messages = [
-            *messages,
-            SystemMessage(content=EMPTY_RESPONSE_RETRY),
-        ]
-        retry_response = self.provider.invoke(retry_messages)
-        retry_text = _content_to_text(retry_response.content)
-        if retry_text:
-            return retry_text
-
-        return "Could you clarify what you need about products, audiences, campaigns, or performance?"
-
-
-def _content_to_text(content: object) -> str:
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                text = item.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-        return " ".join(part.strip() for part in parts if part and part.strip()).strip()
-    return ""
-
-
-def _extract_error_message(payload: object) -> str:
-    if isinstance(payload, str):
-        return payload
-    if isinstance(payload, dict):
-        message = payload.get("message")
-        if isinstance(message, str) and message.strip():
-            return message.strip()
-        code = payload.get("code")
-        if isinstance(code, str) and code.strip():
-            return code.strip()
-    return "Unknown query error"
+    def _cache_and_save(self, ctx: RequestContext, result: PredictResult, message: str) -> None:
+        put_cached(ctx.text, result.model_dump(warnings=False), scope_key=ctx.session_id)
+        self.chat_memory.append_turn(
+            session_id=ctx.session_id,
+            user_text=ctx.text,
+            assistant_text=message,
+        )

@@ -29,3 +29,4 @@ Thumbs.db
 # docker
 postgres_data/
 **/.pnpm-store*
+.claude

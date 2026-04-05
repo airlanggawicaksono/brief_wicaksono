@@ -5,6 +5,16 @@ import { predictStream } from "@/api/predict";
 import type { Message, UseChatReturn } from "@/types/chat";
 import type { ProcessEvent, ToolCall } from "@/types/predict";
 
+function formatArgs(args: Record<string, unknown> | undefined): string {
+  if (!args) return "";
+  return Object.entries(args)
+    .map(([k, v]) => {
+      const s = typeof v === "string" ? v : JSON.stringify(v);
+      return `${k}: ${s.length > 80 ? s.slice(0, 80) + "…" : s}`;
+    })
+    .join(", ");
+}
+
 function sameStep(a: ProcessEvent, b: ProcessEvent): boolean {
   if (!a || !b) return false;
   return a.stage === b.stage && a.title === b.title && a.detail === b.detail;
@@ -145,6 +155,16 @@ export function useChat(): UseChatReturn {
           } else {
             msg.toolCalls = [...calls, { ...tool, loading: true }];
           }
+          const step: ProcessEvent = {
+            stage: "tool_started",
+            title: `Running ${tool.tool}`,
+            detail: formatArgs(tool.args),
+            timestamp: new Date().toISOString(),
+          };
+          const current = msg.process ?? [];
+          if (!current.some((item) => sameStep(item, step))) {
+            msg.process = [...current, step];
+          }
         });
       },
       onToolEnd: (tool: ToolCall) => {
@@ -165,6 +185,17 @@ export function useChat(): UseChatReturn {
               msg.toolCalls = dedupeToolCalls([...calls, { ...tool, loading: false }]);
             }
           }
+          const isError = (tool as unknown as Record<string, unknown>).error === true;
+          const step: ProcessEvent = {
+            stage: "tool_finished",
+            title: `${tool.tool} done`,
+            detail: isError ? "failed" : "",
+            timestamp: new Date().toISOString(),
+          };
+          const current = msg.process ?? [];
+          if (!current.some((item) => sameStep(item, step))) {
+            msg.process = [...current, step];
+          }
         });
       },
       onMessage: (message: string) => {
@@ -175,7 +206,14 @@ export function useChat(): UseChatReturn {
         if (!result || typeof result !== "object") return;
         update((msg) => {
           msg.result = result;
-          msg.process = dedupeSteps(Array.isArray(result.process) ? result.process : []);
+          // Keep frontend-synthesized tool steps (tool_started/tool_finished) — they're not in result.process
+          const frontendSteps = (msg.process ?? []).filter(
+            (s) => s.stage === "tool_started" || s.stage === "tool_finished",
+          );
+          msg.process = dedupeSteps([
+            ...(Array.isArray(result.process) ? result.process : []),
+            ...frontendSteps,
+          ]);
           if (!(typeof msg.content === "string" && msg.content.trim().length > 0)) {
             if (typeof result.message === "string") msg.content = result.message;
           }

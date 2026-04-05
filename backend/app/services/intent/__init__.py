@@ -17,6 +17,7 @@ class IntentService:
             self.structured_llm = provider.with_structured_output(
                 PredictResponse,
                 include_raw=False,
+                method="function_calling",
             )
         except TypeError:
             self.structured_llm = provider.with_structured_output(PredictResponse)

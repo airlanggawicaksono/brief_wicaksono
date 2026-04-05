@@ -141,25 +141,6 @@ export function ChatMessage({ msg }: ChatMessageProps) {
   const processRaw = msg.process ?? msg.result?.process;
   const toolCalls = Array.isArray(toolCallsRaw) ? toolCallsRaw : [];
   const process = Array.isArray(processRaw) ? processRaw : [];
-  const entities =
-    extraction &&
-    typeof extraction === "object" &&
-    extraction.entities &&
-    typeof extraction.entities === "object"
-      ? {
-        category: extraction.entities.category ?? null,
-        target: extraction.entities.target ?? null,
-        price_max: extraction.entities.price_max ?? null,
-      }
-      : null;
-  const entityPairs: Array<[string, unknown]> = entities
-    ? [
-      ["category", entities.category ?? null],
-      ["target", entities.target ?? null],
-      ["price_max", entities.price_max ?? null],
-    ]
-    : [];
-
   return (
     <div className="flex gap-3">
       <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white">
@@ -167,23 +148,6 @@ export function ChatMessage({ msg }: ChatMessageProps) {
       </div>
 
       <div className="min-w-0 flex-1 space-y-3">
-        {entityPairs.some(([, value]) => value != null) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {entityPairs.map(([key, value]) =>
-              value != null ? (
-                <span
-                  key={key}
-                  className="rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
-                >
-                  {key}:{" "}
-                  <span className="font-medium text-gray-900">
-                    {String(value)}
-                  </span>
-                </span>
-              ) : null,
-            )}
-          </div>
-        )}
 
         {process.length > 0 && (
           <div className="space-y-1 text-xs text-gray-400">
@@ -200,13 +164,18 @@ export function ChatMessage({ msg }: ChatMessageProps) {
                 const title = typeof step.title === "string" ? step.title : "Step";
                 const detail = typeof step.detail === "string" ? step.detail : "";
 
-                let entities: Array<[string, string]> = [];
-                if (stage === "intent_detected" && isPlainObject(step.data)) {
-                  const raw = step.data as JsonObject;
-                  const ents = isPlainObject(raw.entities) ? raw.entities as JsonObject : null;
-                  if (ents) {
-                    for (const [k, v] of Object.entries(ents)) {
-                      if (v != null) entities.push([k, String(v)]);
+                let entityPillPairs: Array<[string, string]> = [];
+                if (stage === "intent_detected") {
+                  // step.data is {intent, entities} — try that first, fall back to msg.extraction
+                  const rawEntities =
+                    (isPlainObject(step.data) && isPlainObject((step.data as JsonObject).entities)
+                      ? (step.data as JsonObject).entities
+                      : null) ??
+                    (isPlainObject(extraction?.entities) ? extraction?.entities : null);
+
+                  if (isPlainObject(rawEntities)) {
+                    for (const [k, v] of Object.entries(rawEntities as JsonObject)) {
+                      if (v != null) entityPillPairs.push([k, String(v)]);
                     }
                   }
                 }
@@ -218,14 +187,10 @@ export function ChatMessage({ msg }: ChatMessageProps) {
                       <span>{title}</span>
                       {detail && <span className="text-gray-300">{detail}</span>}
                     </div>
-                    {entities.length > 0 && (
-                      <div className="ml-3 flex flex-wrap gap-1">
-                        {entities.map(([k, v]) => (
-                          <span key={k} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
-                            {k}: <span className="font-medium text-gray-700">{v}</span>
-                          </span>
-                        ))}
-                      </div>
+                    {entityPillPairs.length > 0 && (
+                      <span className="ml-3 text-gray-300">
+                        {entityPillPairs.map(([k, v]) => `${k}: ${v}`).join(", ")}
+                      </span>
                     )}
                   </div>
                 );
@@ -240,6 +205,7 @@ export function ChatMessage({ msg }: ChatMessageProps) {
                 if (!tc || typeof tc !== "object") return false;
                 const raw = tc as unknown as JsonObject;
                 if (raw.error === true) return false;
+                if (tc.tool === "lookup_schema") return false;
                 return true;
               })
               .map((tc, i) => {

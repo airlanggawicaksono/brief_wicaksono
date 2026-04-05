@@ -9,12 +9,24 @@ class MessageBuilder:
     def __init__(self, tool_context: str):
         self._tool_context = tool_context
 
-    def build(self, text: str, history: list | None = None) -> list[BaseMessage]:
+    def build(
+        self,
+        text: str,
+        history: list | None = None,
+        entities: dict | None = None,
+    ) -> list[BaseMessage]:
         messages: list[BaseMessage] = [
             SystemMessage(content=TOOL_AGENT_PROMPT),
             SystemMessage(content=self._tool_context),
             SystemMessage(content=f"User language hint: reply in the same language as this input -> {text}"),
         ]
+        # these are the entitites. to guyide tool usage
+        if entities:
+            import json
+
+            messages.append(
+                SystemMessage(content=f"Extracted entities from user input: {json.dumps(entities, ensure_ascii=False)}")
+            )
 
         if history:
             for entry in history:

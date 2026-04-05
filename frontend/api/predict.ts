@@ -139,6 +139,9 @@ export async function predictStream(text: string, callbacks: SSECallback) {
       for (const chunk of chunks) {
         const { isDone } = handleEventChunk(chunk, callbacks);
         hasDoneEvent = isDone || hasDoneEvent;
+        // Yield to macrotask queue so React renders each event separately
+        // instead of batching all chunks from the same TCP packet into one render.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
 

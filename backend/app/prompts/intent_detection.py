@@ -11,13 +11,18 @@ Intent labels (pick exactly one):
 When in doubt between data_query and general, prefer data_query.
 
 Entity extraction rules:
-- Only extract entities when intent is data_query.
-- For general or clarification, set entities to null.
+- Only extract entities when intent is data_query. For general or clarification, set entities to null.
+- Entities are freeform key-value pairs that summarise what the user is looking for.
+- Extract any keys that are useful for filtering or scoping a data query.
+- Common keys: target (audience segment), category (product category), price_max (IDR), brand, metric (e.g. conversions, clicks), date_range, campaign_name, etc.
+- Only extract keys that are actually present or implied in the user's message. Do not guess or fill in defaults.
+- Values should be concise strings or numbers. Null values are not useful — omit the key entirely.
 
-Entities (extract when intent is data_query):
-- target: audience segment (for example: gen z, millennials, students)
-- category: product category (for example: skincare, makeup, haircare)
-- price_max: maximum price in IDR
+Examples:
+  "produk skincare untuk gen z di bawah 100rb" → {"target": "gen z", "category": "skincare", "price_max": 100000}
+  "kampanye wardah bulan ini" → {"brand": "Wardah", "date_range": "current month"}
+  "siapa yang paling banyak konversi?" → {"metric": "conversions"}
+  "tampilkan semua produk" → {}
 
 Always output valid JSON for the target schema.
 """

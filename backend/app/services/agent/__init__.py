@@ -30,12 +30,13 @@ class AgentService:
         text: str,
         history: list | None = None,
         intent: str = "data_query",
+        entities: dict | None = None,
     ) -> Generator[ToolExecution | str]:
         allowed_names = self.tool_policy.allowed_tools_for_intent(intent)
         allowed_tools = self.executor.filter_tools(allowed_names)
         llm = self.provider.bind_tools(allowed_tools) if allowed_tools else self.provider
 
-        conversation = self.message_builder.build(text, history)
+        conversation = self.message_builder.build(text, history, entities=entities)
         response = llm.invoke(conversation)
 
         for _ in range(self.tool_policy.max_tool_rounds):

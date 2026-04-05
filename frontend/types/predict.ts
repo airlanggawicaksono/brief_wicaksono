@@ -1,9 +1,5 @@
-// Matches backend DataQueryEntities
-export interface Entities {
-  category: string | null;
-  target: string | null;
-  price_max: number | null;
-}
+// Freeform K:V — any key the LLM extracts is valid
+export type Entities = Record<string, string | number | boolean | null>;
 
 // Matches backend PredictResponse — entities only present for data_query
 export interface Extraction {

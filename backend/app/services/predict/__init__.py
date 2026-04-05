@@ -50,10 +50,15 @@ class PredictService:
         extraction = intent_result.output
 
         if self.intent_step.intent_policy.is_data_intent(extraction.intent):
-            agent_result = self.agent_step.run(extraction, ctx)
-            yield from self._emit(agent_result.events, all_events)
-            tool_results = agent_result.output["tool_results"] if agent_result.ok else []
-            message = agent_result.output["message"] if agent_result.ok else ""
+            tool_results = []
+            message = ""
+            for item in self.agent_step.stream(extraction, ctx):
+                if isinstance(item, ProcessEvent):
+                    all_events.append(item)
+                    yield self.presenter.render(item)
+                elif isinstance(item, dict):
+                    tool_results = item.get("tool_results", [])
+                    message = item.get("message", "")
             mode = "query_table" if tool_results else "direct"
         else:
             direct_result = self.direct_step.run(extraction, ctx)

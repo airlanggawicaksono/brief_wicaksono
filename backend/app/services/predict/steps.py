@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -62,66 +64,61 @@ class IntentStep:
 
 
 class AgentStep:
-    """Run the agent tool loop for data queries."""
+    """Run the agent tool loop for data queries, streaming events as they happen."""
 
     name = "agent_execution"
 
     def __init__(self, agent_service: AgentService):
         self.agent_service = agent_service
 
-    def run(self, extraction: PredictResponse, ctx: RequestContext) -> StepResult[dict]:
-        events: list[ProcessEvent] = [
-            ProcessEvent(
-                type=EventType.PROCESS,
-                stage=Stage.AGENT_STARTED,
-                title="Agent started",
-                detail="Selecting tools.",
-            ),
-        ]
+    def stream(
+        self, extraction: PredictResponse, ctx: RequestContext
+    ) -> Generator[ProcessEvent | dict]:
+        """Yields ProcessEvents live as tools execute, then yields a final dict output."""
+        yield ProcessEvent(
+            type=EventType.PROCESS,
+            stage=Stage.AGENT_STARTED,
+            title="Agent started",
+            detail="Selecting tools.",
+        )
 
         tool_results: list[ToolExecution] = []
         message = ""
 
-        for item in self.agent_service.execute(ctx.text, ctx.history, intent=extraction.intent):
+        entities = extraction.entities if isinstance(extraction.entities, dict) else None
+        for item in self.agent_service.execute(
+            ctx.text, ctx.history, intent=extraction.intent, entities=entities
+        ):
             if isinstance(item, ToolExecution):
                 if item.data is None:
-                    events.append(
-                        ProcessEvent(
-                            type=EventType.TOOL_START,
-                            stage=Stage.TOOL_STARTED,
-                            title=f"Running {item.tool}",
-                            detail=str(item.args),
-                            data=item.model_dump(warnings=False),
-                        )
+                    yield ProcessEvent(
+                        type=EventType.TOOL_START,
+                        stage=Stage.TOOL_STARTED,
+                        title=f"Running {item.tool}",
+                        detail=str(item.args),
+                        data=item.model_dump(warnings=False),
                     )
                 else:
                     is_error = _is_tool_error(item)
                     if not is_error:
                         tool_results.append(item)
-                    events.append(
-                        ProcessEvent(
-                            type=EventType.TOOL_END,
-                            stage=Stage.TOOL_FINISHED,
-                            title=f"{item.tool} finished",
-                            detail=_tool_detail(item),
-                            data=_compact_for_ui(item, is_error=is_error),
-                        )
+                    yield ProcessEvent(
+                        type=EventType.TOOL_END,
+                        stage=Stage.TOOL_FINISHED,
+                        title=f"{item.tool} finished",
+                        detail=_tool_detail(item),
+                        data=_compact_for_ui(item, is_error=is_error),
                     )
             elif isinstance(item, str):
                 message = item
-                events.append(
-                    ProcessEvent(
-                        type=EventType.MESSAGE,
-                        stage=Stage.RESPONSE_READY,
-                        title="Response",
-                        detail=message,
-                    )
+                yield ProcessEvent(
+                    type=EventType.MESSAGE,
+                    stage=Stage.RESPONSE_READY,
+                    title="Response",
+                    detail=message,
                 )
-        return StepResult(
-            ok=True,
-            output={"tool_results": tool_results, "message": message},
-            events=events,
-        )
+
+        yield {"tool_results": tool_results, "message": message}
 
 
 class DirectResponseStep:

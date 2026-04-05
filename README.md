@@ -36,7 +36,7 @@ Open `.env` and set your API key:
 OPENAI_API_KEY=sk-...
 ```
 
-Everything else works with the defaults.
+Everything else works with the defaults. The database is pre-seeded with sample products, audiences, campaigns, and performance data on first startup — no manual data loading needed.
 
 ### 2. Start all services
 
@@ -66,7 +66,7 @@ docker compose --env-file .env up -d
 make dev-down
 ```
 
-**Without make (macOS):**
+**Without make:**
 ```bash
 docker compose --env-file .env down
 ```
@@ -142,7 +142,7 @@ The agent loop is self-directing: the LLM decides when the data is sufficient to
 ## Limitations
 
 - **No file export:** Query results are displayed in chat only. CSV export and pandas-based analytics are not yet implemented.
-- **Row limit enforced:** Result sets are capped by policy (default 100 rows). Large dataset exports are not supported.
+- **Row limit enforced:** Result sets are capped by policy (default 2000 rows). Large dataset exports are not supported.
 - **Cache is per-session:** Response cache is keyed by `(session_id, normalized text)`. The same question from two different sessions will invoke the LLM twice.
 - **No multi-database support:** Cross-instance joins (e.g. product and marketing from separate DB hosts) are not supported.
 - **LLM non-determinism:** The agent may produce different SQL for the same question across runs. Query policy validation acts as a safety net but results are not guaranteed to be identical.

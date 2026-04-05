@@ -199,6 +199,20 @@ export function useChat(): UseChatReturn {
           }
         });
       },
+      onArtifact: (artifact) => {
+        if (!artifact || typeof artifact !== "object") return;
+        update((msg) => {
+          const existing = msg.artifacts ?? [];
+          const isDupe = existing.some(
+            (a) =>
+              a.type === artifact.type &&
+              (artifact.type === "image"
+                ? a.image?.slice(0, 32) === artifact.image?.slice(0, 32)
+                : a.name === artifact.name),
+          );
+          if (!isDupe) msg.artifacts = [...existing, artifact];
+        });
+      },
       onMessage: (message: string) => {
         if (typeof message !== "string") return;
         update((msg) => { msg.content = message; });
@@ -226,6 +240,10 @@ export function useChat(): UseChatReturn {
             msg.toolCalls = dedupeToolCalls([...(msg.toolCalls ?? []), ...normalized]);
           } else if (!Array.isArray(msg.toolCalls)) {
             msg.toolCalls = [];
+          }
+          // final result is authoritative — overwrite any duplicates from streaming
+          if (Array.isArray(result.artifacts) && result.artifacts.length > 0) {
+            msg.artifacts = result.artifacts;
           }
         });
       },

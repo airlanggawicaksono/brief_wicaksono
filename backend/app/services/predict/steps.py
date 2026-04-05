@@ -213,6 +213,12 @@ def _compact_for_ui(item: ToolExecution, *, is_error: bool = False) -> dict:
             "message": msg,
         }
 
+    if item.tool == "save_result":
+        return {"tool": item.tool, "args": item.args, "saved": True}
+
+    if item.tool in ("list_workspace", "run_python"):
+        return {"tool": item.tool, "args": item.args}
+
     if item.tool != "lookup_schema" or not isinstance(item.data, dict):
         return item.model_dump(warnings=False)
 

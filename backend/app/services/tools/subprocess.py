@@ -30,11 +30,12 @@ def create_run_python_tool(workspace_repo: WorkspaceRepository, session_id: str)
 
         Use this when the user asks for a chart, dashboard, or visualization.
         Workspace datasets are written as CSV files before the script runs.
-        A dict called `workspace` maps each dataset name to its CSV file path.
-        Use pandas to load them:
+        A dict called `workspace` maps each dataset name to its full CSV file path.
+        Always load data using the workspace dict — never use bare filenames:
 
             import pandas as pd
-            df = pd.read_csv(workspace['analytics'])
+            df = pd.read_csv(workspace['analytics'])   # correct
+            # df = pd.read_csv('analytics.csv')        # wrong — will fail
 
         To produce an image, save to 'output.png':
 
@@ -61,21 +62,22 @@ def create_run_python_tool(workspace_repo: WorkspaceRepository, session_id: str)
 
             output_path = os.path.join(tmpdir, "output.png")
 
-            # inject workspace path map + output path as literals — no row data in script
-            workspace_literal = json.dumps(file_map)
-            script = textwrap.dedent(f"""\
-                import matplotlib
-                matplotlib.use('Agg')
-                import matplotlib.pyplot as plt
-
-                workspace = {workspace_literal}
-                _output_path = {repr(output_path)}
-
-                {code}
-            """)
-            # allow LLM to write savefig('output.png') — rewrite to actual path
-            script = script.replace("savefig('output.png')", f"savefig(_output_path)")
-            script = script.replace('savefig("output.png")', f"savefig(_output_path)")
+            # build script by joining parts — never use textwrap.dedent on f-strings
+            # that embed multi-line user code (dedent sees mixed indentation and breaks)
+            boilerplate = "\n".join([
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "",
+                f"workspace = {json.dumps(file_map)}",
+                f"_output_path = {repr(output_path)}",
+                "",
+            ])
+            # normalise user code indentation and rewrite savefig path
+            user_code = textwrap.dedent(code)
+            user_code = user_code.replace("savefig('output.png')", "savefig(_output_path)")
+            user_code = user_code.replace('savefig("output.png")', "savefig(_output_path)")
+            script = boilerplate + user_code
 
             script_path = os.path.join(tmpdir, "script.py")
             with open(script_path, "w", encoding="utf-8") as f:

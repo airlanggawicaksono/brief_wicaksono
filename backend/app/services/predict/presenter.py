@@ -19,6 +19,8 @@ class SsePresenter:
             return SsePresenter.message(event.detail)
         if event.type == EventType.EXTRACTION:
             return f"event: extraction\ndata: {json.dumps(event.data, default=str)}\n\n"
+        if event.type == EventType.ARTIFACT:
+            return f"event: artifact\ndata: {json.dumps(event.data, default=str)}\n\n"
         return SsePresenter._process_event(event)
 
     @staticmethod

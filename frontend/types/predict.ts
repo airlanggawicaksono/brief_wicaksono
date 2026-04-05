@@ -33,6 +33,15 @@ export interface ToolCall {
   loading?: boolean;
 }
 
+export interface Artifact {
+  type: "image" | "dataset";
+  name?: string;
+  format?: string;
+  image?: string;
+  row_count?: number;
+  rows?: Record<string, unknown>[];
+}
+
 // Matches backend PredictResult
 export interface PredictResult {
   input: string;
@@ -41,6 +50,7 @@ export interface PredictResult {
   tool_results: ToolCall[];
   process: ProcessEvent[];
   message: string;
+  artifacts?: Artifact[];
 }
 
 export type SSECallback = {
@@ -48,6 +58,7 @@ export type SSECallback = {
   onProcess?: (step: ProcessEvent) => void;
   onToolStart?: (tool: ToolCall) => void;
   onToolEnd?: (tool: ToolCall) => void;
+  onArtifact?: (artifact: Artifact) => void;
   onMessage?: (message: string) => void;
   onResult: (result: PredictResult) => void;
   onDone: () => void;

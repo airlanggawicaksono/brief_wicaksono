@@ -206,6 +206,9 @@ export function ChatMessage({ msg }: ChatMessageProps) {
                 const raw = tc as unknown as JsonObject;
                 if (raw.error === true) return false;
                 if (tc.tool === "lookup_schema") return false;
+                if (tc.tool === "save_result") return false;
+                if (tc.tool === "list_workspace") return false;
+                if (tc.tool === "run_python") return false;
                 return true;
               })
               .map((tc, i) => {
@@ -295,6 +298,50 @@ export function ChatMessage({ msg }: ChatMessageProps) {
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-gray-400" />
             Processing...
+          </div>
+        )}
+
+        {msg.artifacts && msg.artifacts.length > 0 && (
+          <div className="space-y-3">
+            {msg.artifacts.map((artifact, i) => {
+              if (artifact.type === "image" && artifact.image) {
+                return (
+                  <img
+                    key={i}
+                    src={`data:image/${artifact.format ?? "png"};base64,${artifact.image}`}
+                    alt="Generated chart"
+                    className="max-w-full rounded-xl border border-gray-200"
+                  />
+                );
+              }
+              if (artifact.type === "dataset" && artifact.name) {
+                const csvRows = artifact.rows ?? [];
+                const cols = csvRows.length > 0 ? Object.keys(csvRows[0]) : [];
+                const csv = [
+                  cols.join(","),
+                  ...csvRows.map((r) => cols.map((c) => JSON.stringify(r[c] ?? "")).join(",")),
+                ].join("\n");
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                return (
+                  <a
+                    key={i}
+                    href={url}
+                    download={`${artifact.name}.csv`}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M7 2v7M4 6l3 3 3-3M2 11h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    {artifact.name}.csv
+                    {artifact.row_count != null && (
+                      <span className="text-gray-400">({artifact.row_count} rows)</span>
+                    )}
+                  </a>
+                );
+              }
+              return null;
+            })}
           </div>
         )}
 

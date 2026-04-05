@@ -1,5 +1,5 @@
 import api from "@/api/base";
-import type { Extraction, PredictResult, ProcessEvent, SSECallback, ToolCall } from "@/types/predict";
+import type { Artifact, Extraction, PredictResult, ProcessEvent, SSECallback, ToolCall } from "@/types/predict";
 
 const SESSION_STORAGE_KEY = "wpp_session_id";
 
@@ -49,6 +49,7 @@ function handleEventChunk(
     else if (eventType === "process" && isObject) callbacks.onProcess?.(data as ProcessEvent);
     else if (eventType === "tool_start" && isObject) callbacks.onToolStart?.(data as ToolCall);
     else if (eventType === "tool_end" && isObject) callbacks.onToolEnd?.(data as ToolCall);
+    else if (eventType === "artifact" && isObject) callbacks.onArtifact?.(data as Artifact);
     else if (eventType === "message" && typeof data === "string") callbacks.onMessage?.(data);
     else if (eventType === "result" && isObject) callbacks.onResult(data as PredictResult);
     else if (eventType === "cached" && isObject) callbacks.onResult(data as PredictResult);

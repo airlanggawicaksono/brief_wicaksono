@@ -18,7 +18,6 @@ from app.dto.predict_result import PredictResult, ProcessStep, ToolExecution
 from app.dto.response import PredictResponse
 from app.repository.chat_memory import RedisChatMemory
 from app.services.intent import IntentService
-from app.services.query_tools import QueryToolFactory
 from app.services.schema import SchemaService
 
 
@@ -30,7 +29,7 @@ class PredictService:
         provider: BaseChatModel,
         intent_service: IntentService,
         schema_service: SchemaService,
-        tool_factory: QueryToolFactory,
+        tools: list,
         intent_policy: IntentPolicy,
         tool_policy: ToolPolicy,
         chat_memory: RedisChatMemory,
@@ -42,7 +41,7 @@ class PredictService:
         self.tool_policy = tool_policy
         self.chat_memory = chat_memory
 
-        self._tools = tool_factory.get_tools()
+        self._tools = tools
         self._tool_map = {tool.name: tool for tool in self._tools}
 
     def run_stream(self, text: str, session_id: str) -> Generator[str]:

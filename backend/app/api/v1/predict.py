@@ -15,9 +15,8 @@ from app.dto.request import PredictRequest
 from app.repository.chat_memory import RedisChatMemory
 from app.services.intent import IntentService
 from app.services.predict import PredictService
-from app.services.query_executor import QueryExecutor
-from app.services.query_tools import QueryToolFactory
 from app.services.schema import SchemaService
+from app.services.tools import get_tools
 
 router = APIRouter(prefix="/predict", tags=["predict"])
 
@@ -46,18 +45,12 @@ def get_schema_service(query_policy: QueryPolicy = Depends(get_query_policy)) ->
     return SchemaService(query_policy=query_policy)
 
 
-def get_query_executor(
-    db: Session = Depends(get_db),
-    query_policy: QueryPolicy = Depends(get_query_policy),
-) -> QueryExecutor:
-    return QueryExecutor(db=db, query_policy=query_policy)
-
-
-def get_query_tool_factory(
+def get_query_tools(
     schema_service: SchemaService = Depends(get_schema_service),
-    query_executor: QueryExecutor = Depends(get_query_executor),
-) -> QueryToolFactory:
-    return QueryToolFactory(schema_service=schema_service, query_executor=query_executor)
+    query_policy: QueryPolicy = Depends(get_query_policy),
+    db: Session = Depends(get_db),
+) -> list:
+    return get_tools(schema_service=schema_service, query_policy=query_policy, db=db)
 
 
 def get_intent_service(
@@ -75,7 +68,7 @@ def get_predict_service(
     provider: BaseChatModel = Depends(get_llm_provider),
     intent_service: IntentService = Depends(get_intent_service),
     schema_service: SchemaService = Depends(get_schema_service),
-    tool_factory: QueryToolFactory = Depends(get_query_tool_factory),
+    tools: list = Depends(get_query_tools),
     intent_policy: IntentPolicy = Depends(get_intent_policy),
     tool_policy: ToolPolicy = Depends(get_tool_policy),
     chat_memory: RedisChatMemory = Depends(get_chat_memory_repository),
@@ -84,7 +77,7 @@ def get_predict_service(
         provider=provider,
         intent_service=intent_service,
         schema_service=schema_service,
-        tool_factory=tool_factory,
+        tools=tools,
         intent_policy=intent_policy,
         tool_policy=tool_policy,
         chat_memory=chat_memory,

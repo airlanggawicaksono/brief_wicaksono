@@ -93,7 +93,10 @@ class SchemaService:
             },
             constraints=SchemaConstraintsMetadata(
                 allowed_operators=sorted(self.query_policy.allowed_operators),
-                allowed_joins=sorted([f"{left} -> {right}" for left, right in self.query_policy.allowed_join_edges]),
+                allowed_joins=sorted([
+                    f"{rel.source_schema}.{rel.source_table} -> {rel.target_schema}.{rel.target_table}"
+                    for rel in relationships
+                ]),
                 write_operations="disabled",
             ),
             relationships=relationships,

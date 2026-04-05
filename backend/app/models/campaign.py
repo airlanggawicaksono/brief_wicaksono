@@ -1,7 +1,7 @@
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.config.database import MarketingBase
+from app.config.database import MarketingBase
 
 
 class Campaign(MarketingBase):

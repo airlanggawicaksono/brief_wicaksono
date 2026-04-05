@@ -6,17 +6,18 @@ from fastapi.responses import StreamingResponse
 from langchain_core.language_models.chat_models import BaseChatModel
 from sqlalchemy.orm import Session
 
-from app.core.business_policy.intent_policy import IntentPolicy
-from app.core.business_policy.query_policy import QueryPolicy
-from app.core.business_policy.tool_policy import ToolPolicy
-from app.core.config.database import get_db
-from app.core.providers.llm_provider import create_llm_provider
-from app.dto.request import PredictRequest
+from app.config.database import get_db
+from app.core.llm_provider import create_llm_provider
+from app.policy.intent import IntentPolicy
+from app.policy.query import QueryPolicy
+from app.policy.tool import ToolPolicy
 from app.repository.chat_memory import RedisChatMemory
+from app.services.agent import AgentService
 from app.services.intent import IntentService
 from app.services.predict import PredictService
-from app.services.schema import SchemaService
-from app.services.tools import get_tools
+from app.services.predict.dto import PredictRequest
+from app.services.tools import build_tool_context, get_tools
+from app.services.tools.schema import SchemaService
 
 router = APIRouter(prefix="/predict", tags=["predict"])
 
@@ -41,8 +42,8 @@ def get_tool_policy() -> ToolPolicy:
     return ToolPolicy()
 
 
-def get_schema_service(query_policy: QueryPolicy = Depends(get_query_policy)) -> SchemaService:
-    return SchemaService(query_policy=query_policy)
+def get_schema_service() -> SchemaService:
+    return SchemaService()
 
 
 def get_query_tools(
@@ -64,22 +65,32 @@ def get_chat_memory_repository() -> RedisChatMemory:
     return RedisChatMemory()
 
 
+def get_agent_service(
+    provider: BaseChatModel = Depends(get_llm_provider),
+    tools: list = Depends(get_query_tools),
+    tool_policy: ToolPolicy = Depends(get_tool_policy),
+    query_policy: QueryPolicy = Depends(get_query_policy),
+) -> AgentService:
+    return AgentService(
+        provider=provider,
+        tools=tools,
+        tool_policy=tool_policy,
+        tool_context=build_tool_context(query_policy),
+    )
+
+
 def get_predict_service(
     provider: BaseChatModel = Depends(get_llm_provider),
     intent_service: IntentService = Depends(get_intent_service),
-    schema_service: SchemaService = Depends(get_schema_service),
-    tools: list = Depends(get_query_tools),
+    agent_service: AgentService = Depends(get_agent_service),
     intent_policy: IntentPolicy = Depends(get_intent_policy),
-    tool_policy: ToolPolicy = Depends(get_tool_policy),
     chat_memory: RedisChatMemory = Depends(get_chat_memory_repository),
 ) -> PredictService:
     return PredictService(
         provider=provider,
         intent_service=intent_service,
-        schema_service=schema_service,
-        tools=tools,
+        agent_service=agent_service,
         intent_policy=intent_policy,
-        tool_policy=tool_policy,
         chat_memory=chat_memory,
     )
 

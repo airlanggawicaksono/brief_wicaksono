@@ -35,20 +35,6 @@ class TableMetadata(BaseModel):
     }
 
 
-class QueryToolMetadata(BaseModel):
-    description: str
-
-
-class SchemaConstraintsMetadata(BaseModel):
-    allowed_operators: list[str] = Field(default_factory=list)
-    allowed_joins: list[str] = Field(default_factory=list)
-    write_operations: str = "disabled"
-
-
 class SchemaMetadataResponse(BaseModel):
-    snapshot_hash: str
-    snapshot_version: str
     tables: dict[str, TableMetadata] = Field(default_factory=dict)
-    query_tools: dict[str, QueryToolMetadata] = Field(default_factory=dict)
-    constraints: SchemaConstraintsMetadata
     relationships: list[ForeignKeyMetadata] = Field(default_factory=list)

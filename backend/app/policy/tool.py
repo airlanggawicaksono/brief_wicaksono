@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from app.core.enum.intents import Intent
+from app.core.intents import Intent
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class ToolPolicy:
         }
     )
     default_allowlist: set[str] = field(default_factory=set)
-    max_tool_rounds: int = 6
+    max_tool_rounds: int = 25
 
     def allowed_tools_for_intent(self, intent: str) -> set[str]:
         return set(self.tool_allowlist_by_intent.get(intent, self.default_allowlist))

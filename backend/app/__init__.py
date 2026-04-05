@@ -4,15 +4,14 @@ from fastapi import FastAPI
 
 import app.models  # noqa: F401
 from app.api.v1 import predict
-from app.core.config.database import (
+from app.config.database import (
     create_schemas,
     get_engine,
     get_session_factory,
     shared_metadata,
 )
-from app.core.exceptions.base import AppException
-from app.core.exceptions.handlers import app_exception_handler
-from app.core.middleware import register_middleware
+from app.config.middleware import register_middleware
+from app.core.exceptions import AppException, app_exception_handler
 from app.seed import seed_data
 
 

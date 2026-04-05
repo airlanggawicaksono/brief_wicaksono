@@ -1,17 +1,16 @@
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.dto.response import PredictResponse
+from app.services.agent.dto import ToolExecution
+from app.services.intent.dto import PredictResponse
 
 ExecutionPath = Literal["direct", "query_table"]
 
 
-class ToolExecution(BaseModel):
-    tool: str = Field(min_length=1)
-    args: dict[str, Any] = Field(default_factory=dict)
-    data: Any = None
+class PredictRequest(BaseModel):
+    text: str
 
 
 class ProcessStep(BaseModel):
@@ -22,12 +21,9 @@ class ProcessStep(BaseModel):
 
 
 class PredictResult(BaseModel):
-    pipeline_version: Literal[2, 3, 4] = 4
     input: str = Field(min_length=1)
     extraction: PredictResponse
     mode: ExecutionPath
     tool_results: list[ToolExecution] = Field(default_factory=list)
     process: list[ProcessStep] = Field(default_factory=list)
     message: str = ""
-    metadata_snapshot_hash: str | None = None
-    metadata_snapshot_version: str | None = None

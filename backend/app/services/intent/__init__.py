@@ -1,10 +1,10 @@
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.business_policy.intent_policy import IntentPolicy
-from app.core.prompts.extraction import EXTRACTION_PROMPT
-from app.core.technical_policy.retry import retry
-from app.dto.response import PredictResponse
+from app.core.infra.retry import retry
+from app.policy.intent import IntentPolicy
+from app.prompts.intent_detection import INTENT_DETECTION_PROMPT
+from app.services.intent.dto import PredictResponse
 
 
 class IntentService:
@@ -23,7 +23,7 @@ class IntentService:
     @retry()
     def detect(self, text: str) -> PredictResponse:
         messages = [
-            SystemMessage(content=EXTRACTION_PROMPT),
+            SystemMessage(content=INTENT_DETECTION_PROMPT),
             HumanMessage(content=text),
         ]
         result = self._coerce_response(self.structured_llm.invoke(messages))
@@ -31,17 +31,20 @@ class IntentService:
         return result
 
     def _coerce_response(self, value: object) -> PredictResponse:
-        if isinstance(value, PredictResponse):
-            return value
+        """Extract PredictResponse from LangChain structured output.
 
-        if isinstance(value, dict):
-            parsed = value.get("parsed")
-            if parsed is not None:
-                return PredictResponse.model_validate(parsed)
-            return PredictResponse.model_validate(value)
+        Always reconstructs a fresh PredictResponse to strip any
+        provider-specific serialization metadata (e.g. LangChain's
+        'parsed' wrapper) that causes Pydantic serializer warnings.
+        """
+        raw = value
 
-        parsed_attr = getattr(value, "parsed", None)
-        if parsed_attr is not None:
-            return PredictResponse.model_validate(parsed_attr)
+        if isinstance(raw, dict):
+            raw = raw.get("parsed", raw)
+        elif not isinstance(raw, PredictResponse):
+            raw = getattr(raw, "parsed", raw)
 
-        return PredictResponse.model_validate(value)
+        if isinstance(raw, PredictResponse):
+            return PredictResponse(intent=raw.intent, entities=raw.entities)
+
+        return PredictResponse.model_validate(raw)

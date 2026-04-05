@@ -4,7 +4,7 @@ from functools import lru_cache
 from sqlalchemy import Engine, MetaData, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from app.core.config.settings import settings
+from app.config.settings import settings
 
 
 @lru_cache(maxsize=1)

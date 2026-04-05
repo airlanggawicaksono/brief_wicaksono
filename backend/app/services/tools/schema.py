@@ -1,24 +1,18 @@
 from typing import Literal
-import hashlib
-import json
 
-from app.core.business_policy.query_policy import QueryPolicy
-from app.core.config.database import MarketingBase, ProductBase
-from app.dto.schema_metadata import (
+from langchain_core.tools import tool
+
+from app.config.database import MarketingBase, ProductBase
+from app.services.tools.dto import (
     ColumnMetadata,
     ForeignKeyMetadata,
-    QueryToolMetadata,
-    SchemaConstraintsMetadata,
     SchemaMetadataResponse,
     TableMetadata,
 )
 
 
 class SchemaService:
-    """Introspects ORM registry and returns policy-aware schema metadata."""
-
-    def __init__(self, query_policy: QueryPolicy):
-        self.query_policy = query_policy
+    """Introspects ORM registry and returns schema metadata."""
 
     def get_schema(
         self,
@@ -74,31 +68,8 @@ class SchemaService:
                     foreign_keys=foreign_keys,
                 )
 
-        raw_tables_dump = {table_key: table_meta.model_dump() for table_key, table_meta in schema.items()}
-        snapshot_hash = hashlib.sha256(
-            json.dumps(raw_tables_dump, sort_keys=True, ensure_ascii=False).encode("utf-8")
-        ).hexdigest()
-
         schema_response = SchemaMetadataResponse(
-            snapshot_hash=snapshot_hash,
-            snapshot_version=snapshot_hash[:12],
             tables=schema,
-            query_tools={
-                "lookup_schema": QueryToolMetadata(
-                    description="Inspect current schema metadata, relationships, and constraints.",
-                ),
-                "query_table": QueryToolMetadata(
-                    description="Execute a structured QueryPlan with metadata_hash validation.",
-                ),
-            },
-            constraints=SchemaConstraintsMetadata(
-                allowed_operators=sorted(self.query_policy.allowed_operators),
-                allowed_joins=sorted([
-                    f"{rel.source_schema}.{rel.source_table} -> {rel.target_schema}.{rel.target_table}"
-                    for rel in relationships
-                ]),
-                write_operations="disabled",
-            ),
             relationships=relationships,
         )
 
@@ -107,11 +78,7 @@ class SchemaService:
             matches = {k: v for k, v in schema_response.tables.items() if normalized in k}
             if matches:
                 filtered = SchemaMetadataResponse(
-                    snapshot_hash=schema_response.snapshot_hash,
-                    snapshot_version=schema_response.snapshot_version,
                     tables=matches,
-                    query_tools=schema_response.query_tools,
-                    constraints=schema_response.constraints,
                     relationships=[
                         rel
                         for rel in schema_response.relationships
@@ -123,11 +90,6 @@ class SchemaService:
             return {"error": f"Table '{table_name}' not found. Available: {list(schema_response.tables.keys())}"}
 
         return self._format_schema_dump(schema_response.model_dump(), detail_level)
-
-    def get_snapshot_hash(self) -> str:
-        schema = self.get_schema(detail_level="summary")
-        value = schema.get("snapshot_hash")
-        return value if isinstance(value, str) else ""
 
     def _format_schema_dump(self, schema_dump: dict, detail_level: Literal["summary", "full"]) -> dict:
         if detail_level == "full":
@@ -155,12 +117,8 @@ class SchemaService:
             }
 
         return {
-            "snapshot_hash": schema_dump.get("snapshot_hash"),
-            "snapshot_version": schema_dump.get("snapshot_version"),
             "table_count": len(summary_tables),
             "tables": summary_tables,
-            "query_tools": schema_dump.get("query_tools", {}),
-            "constraints": schema_dump.get("constraints", {}),
             "relationships": [
                 {
                     "source": f"{rel.get('source_schema')}.{rel.get('source_table')}.{rel.get('source_column')}",
@@ -170,3 +128,23 @@ class SchemaService:
                 if isinstance(rel, dict)
             ],
         }
+
+
+def create_lookup_schema_tool(schema_service: SchemaService):
+
+    @tool
+    def lookup_schema(
+        table_name: str | None = None,
+        detail_level: str = "summary",
+    ) -> dict:
+        """Inspect schema metadata and query constraints before planning a query.
+
+        Always call this before query_table to see available tables, columns, and relationships.
+        """
+        normalized_detail = detail_level.lower().strip()
+        detail: Literal["summary", "full"] = "summary"
+        if normalized_detail == "full":
+            detail = "full"
+        return schema_service.get_schema(table_name=table_name, detail_level=detail)
+
+    return lookup_schema

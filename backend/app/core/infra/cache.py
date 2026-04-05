@@ -3,7 +3,7 @@ import json
 
 import redis
 
-from app.core.config.settings import settings
+from app.config.settings import settings
 
 CACHE_PREFIX = "wpp:cache:"
 CACHE_TTL = 60 * 60 * 24  # 24 hours

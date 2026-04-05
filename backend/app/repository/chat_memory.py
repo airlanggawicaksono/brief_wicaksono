@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from app.core.config.settings import settings
+from app.config.settings import settings
 
 
 class RedisChatMemory:

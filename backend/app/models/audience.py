@@ -1,7 +1,7 @@
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.config.database import ProductBase
+from app.config.database import ProductBase
 
 
 class Audience(ProductBase):

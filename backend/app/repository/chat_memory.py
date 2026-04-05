@@ -1,6 +1,13 @@
+from typing import Literal, TypedDict
+
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.config.settings import settings
+
+
+class ChatMessage(TypedDict):
+    role: Literal["user", "assistant"]
+    content: str
 
 
 class RedisChatMemory:
@@ -20,7 +27,7 @@ class RedisChatMemory:
             redis_url=settings.redis_url,
         )
 
-    def load_messages(self, session_id: str, limit: int = 20) -> list[dict]:
+    def load_messages(self, session_id: str, limit: int = 20) -> list[ChatMessage]:
         history = self._get_history(session_id)
         messages: list[BaseMessage] = history.messages
         if limit > 0:

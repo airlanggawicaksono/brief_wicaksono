@@ -9,6 +9,7 @@ export interface Extraction {
 
 // Matches the `event: process` SSE payload from SsePresenter._process_event()
 export interface ProcessEvent {
+  id?: string;     // backend-generated hex UUID — use for dedup when present
   stage: string;
   title: string;
   detail: string;

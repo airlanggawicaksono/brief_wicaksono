@@ -1,5 +1,8 @@
+import json
+
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
+from app.repository.chat_memory import ChatMessage
 from app.prompts.tool_agent import TOOL_AGENT_PROMPT
 
 
@@ -12,7 +15,7 @@ class MessageBuilder:
     def build(
         self,
         text: str,
-        history: list | None = None,
+        history: list[ChatMessage] | None = None,
         entities: dict | None = None,
     ) -> list[BaseMessage]:
         messages: list[BaseMessage] = [
@@ -20,10 +23,7 @@ class MessageBuilder:
             SystemMessage(content=self._tool_context),
             SystemMessage(content=f"User language hint: reply in the same language as this input -> {text}"),
         ]
-        # these are the entitites. to guyide tool usage
         if entities:
-            import json
-
             messages.append(
                 SystemMessage(content=f"Extracted entities from user input: {json.dumps(entities, ensure_ascii=False)}")
             )

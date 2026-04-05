@@ -7,7 +7,6 @@ class Stage(StrEnum):
     AGENT_STARTED = "agent_started"
     TOOL_STARTED = "tool_started"
     TOOL_FINISHED = "tool_finished"
-    QUERY_EXECUTED = "query_executed"
     DIRECT_RESPONSE = "direct_response"
     RESPONSE_READY = "response_ready"
     FAILED = "failed"

@@ -4,15 +4,17 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.core.enums.intents import Intent
+from app.repository.chat_memory import ChatMessage
 from app.policy.intent import IntentPolicy
-from app.core.enums.EventType import Stage, EventType
+from app.core.enums.event_type import Stage, EventType
 from app.prompts.clarification import CLARIFICATION_PROMPT
 from app.prompts.general import GENERAL_PROMPT
 from app.services.agent import AgentService
 from app.services.agent.dto import ToolExecution
 from app.services.intent import IntentService
-from app.services.intent.dto import PredictResponse
+from app.services.intent.dto import IntentExtraction
 from app.services.predict.dto import (
+    AgentStepOutput,
     ProcessEvent,
     RequestContext,
     StepResult,
@@ -28,7 +30,7 @@ class IntentStep:
         self.intent_service = intent_service
         self.intent_policy = intent_policy
 
-    def run(self, ctx: RequestContext) -> StepResult[PredictResponse]:
+    def run(self, ctx: RequestContext) -> StepResult[IntentExtraction]:
         events: list[ProcessEvent] = [
             ProcessEvent(
                 type=EventType.PROCESS,
@@ -72,8 +74,8 @@ class AgentStep:
         self.agent_service = agent_service
 
     def stream(
-        self, extraction: PredictResponse, ctx: RequestContext
-    ) -> Generator[ProcessEvent | dict]:
+        self, extraction: IntentExtraction, ctx: RequestContext
+    ) -> Generator[ProcessEvent | AgentStepOutput]:
         """Yields ProcessEvents live as tools execute, then yields a final dict output."""
         yield ProcessEvent(
             type=EventType.PROCESS,
@@ -118,7 +120,7 @@ class AgentStep:
                     detail=message,
                 )
 
-        yield {"tool_results": tool_results, "message": message}
+        yield AgentStepOutput(tool_results=tool_results, message=message)
 
 
 class DirectResponseStep:
@@ -129,7 +131,7 @@ class DirectResponseStep:
     def __init__(self, provider: BaseChatModel):
         self.provider = provider
 
-    def run(self, extraction: PredictResponse, ctx: RequestContext) -> StepResult[str]:
+    def run(self, extraction: IntentExtraction, ctx: RequestContext) -> StepResult[str]:
         events: list[ProcessEvent] = [
             ProcessEvent(
                 type=EventType.PROCESS,
@@ -151,7 +153,7 @@ class DirectResponseStep:
         )
         return StepResult(ok=True, output=message, events=events)
 
-    def _invoke_llm(self, text: str, intent: str, history: list) -> str:
+    def _invoke_llm(self, text: str, intent: str, history: list[ChatMessage]) -> str:
         system_content = CLARIFICATION_PROMPT if intent == Intent.CLARIFICATION else GENERAL_PROMPT
         messages: list = [SystemMessage(content=system_content)]
 

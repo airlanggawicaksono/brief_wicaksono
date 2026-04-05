@@ -1,55 +1,33 @@
+import api from "@/api/base";
 import type { Extraction, PredictResult, ProcessEvent, SSECallback, ToolCall } from "@/types/predict";
 
 const SESSION_STORAGE_KEY = "wpp_session_id";
 
 function getSessionId(): string | null {
   if (typeof window === "undefined") return null;
-
   let sessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
   if (!sessionId) {
     sessionId = window.crypto?.randomUUID?.() ?? `${Date.now()}`;
     window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
   }
-
   return sessionId;
 }
 
-function saveSessionIdFromHeaders(headers: unknown): void {
-  if (typeof window === "undefined" || !headers) return;
-
-  let sessionId: string | null = null;
-  try {
-    if (typeof headers === "object" && headers !== null && "get" in headers) {
-      const getter = (headers as { get?: (name: string) => string | null }).get;
-      const raw = typeof getter === "function" ? getter("x-session-id") : null;
-      if (typeof raw === "string" && raw.trim().length > 0) {
-        sessionId = raw.trim();
-      }
-    } else if (typeof headers === "object" && headers !== null) {
-      const raw = (headers as Record<string, unknown>)["x-session-id"];
-      if (typeof raw === "string" && raw.trim().length > 0) {
-        sessionId = raw.trim();
-      }
-    }
-  } catch {
-    return;
-  }
-
-  if (sessionId) {
-    window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
-  }
+function saveSessionId(id: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SESSION_STORAGE_KEY, id);
 }
 
 function handleEventChunk(
   chunk: string,
   callbacks: SSECallback,
-): { isDone: boolean; eventType: string } {
+): { isDone: boolean } {
   const lines = chunk
     .split("\n")
     .map((line) => line.replace(/\r$/, ""))
     .filter((line) => line.length > 0);
 
-  if (lines.length === 0) return { isDone: false, eventType: "" };
+  if (lines.length === 0) return { isDone: false };
 
   let eventType = "";
   const dataLines: string[] = [];
@@ -61,103 +39,71 @@ function handleEventChunk(
     }
   }
 
-  if (!eventType || dataLines.length === 0) return { isDone: false, eventType: "" };
+  if (!eventType || dataLines.length === 0) return { isDone: false };
 
-  const dataRaw = dataLines.join("\n");
   try {
-    const data: unknown = JSON.parse(dataRaw);
+    const data: unknown = JSON.parse(dataLines.join("\n"));
     const isObject = typeof data === "object" && data !== null;
 
-    if (eventType === "extraction") {
-      if (isObject) callbacks.onExtraction?.(data as Extraction);
-    } else if (eventType === "process") {
-      if (isObject) callbacks.onProcess?.(data as ProcessEvent);
-    } else if (eventType === "tool_start") {
-      if (isObject) callbacks.onToolStart?.(data as ToolCall);
-    } else if (eventType === "tool_end") {
-      if (isObject) callbacks.onToolEnd?.(data as ToolCall);
-    } else if (eventType === "message") {
-      if (typeof data === "string") callbacks.onMessage?.(data);
-    } else if (eventType === "result") {
-      if (isObject) callbacks.onResult(data as PredictResult);
-    } else if (eventType === "cached") {
-      if (isObject) callbacks.onResult(data as PredictResult);
-    }
+    if (eventType === "extraction" && isObject) callbacks.onExtraction?.(data as Extraction);
+    else if (eventType === "process" && isObject) callbacks.onProcess?.(data as ProcessEvent);
+    else if (eventType === "tool_start" && isObject) callbacks.onToolStart?.(data as ToolCall);
+    else if (eventType === "tool_end" && isObject) callbacks.onToolEnd?.(data as ToolCall);
+    else if (eventType === "message" && typeof data === "string") callbacks.onMessage?.(data);
+    else if (eventType === "result" && isObject) callbacks.onResult(data as PredictResult);
+    else if (eventType === "cached" && isObject) callbacks.onResult(data as PredictResult);
     else if (eventType === "done") callbacks.onDone();
   } catch {
-    return { isDone: false, eventType: "" };
+    return { isDone: false };
   }
 
-  return { isDone: eventType === "done", eventType };
+  return { isDone: eventType === "done" };
 }
 
 export async function predictStream(text: string, callbacks: SSECallback) {
   try {
     const sessionId = getSessionId();
-    const base = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
-    const endpoint = `${base}/predict`;
-
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Accept": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Content-Type": "application/json",
-        ...(sessionId ? { "X-Session-Id": sessionId } : {}),
-      },
-      body: JSON.stringify({ text }),
-      credentials: "include",
-    });
-
-    if (!res.ok) {
-      throw new Error(`Request failed with status ${res.status}`);
-    }
-
-    saveSessionIdFromHeaders(res.headers);
-
-    if (!res.body) {
-      const fallback = await res.text();
-      if (fallback && callbacks.onMessage) callbacks.onMessage(fallback);
-      callbacks.onDone();
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
+    let processedLength = 0;
     let buffer = "";
     let hasDoneEvent = false;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const response = await api.post<string>("/predict", { text }, {
+      headers: {
+        Accept: "text/event-stream",
+        "Cache-Control": "no-cache",
+        ...(sessionId ? { "X-Session-Id": sessionId } : {}),
+      },
+      responseType: "text",
+      onDownloadProgress: (progressEvent) => {
+        const target = progressEvent.event?.target as { responseText?: string } | null;
+        const accumulated = target?.responseText ?? "";
+        const newChunk = accumulated.slice(processedLength);
+        processedLength = accumulated.length;
 
-      buffer += decoder.decode(value, { stream: true });
-      buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop() || "";
+        buffer += newChunk;
+        buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
 
-      for (const chunk of chunks) {
-        const { isDone } = handleEventChunk(chunk, callbacks);
-        hasDoneEvent = isDone || hasDoneEvent;
-        // Yield to macrotask queue so React renders each event separately
-        // instead of batching all chunks from the same TCP packet into one render.
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      }
+        for (const chunk of chunks) {
+          const { isDone } = handleEventChunk(chunk, callbacks);
+          if (isDone) hasDoneEvent = true;
+        }
+      },
+    });
+
+    const serverSessionId = response.headers["x-session-id"];
+    if (typeof serverSessionId === "string" && serverSessionId.trim()) {
+      saveSessionId(serverSessionId.trim());
     }
 
-    buffer += decoder.decode();
-    buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-    if (buffer.trim().length > 0) {
+    if (buffer.trim()) {
       const { isDone } = handleEventChunk(buffer, callbacks);
-      hasDoneEvent = isDone || hasDoneEvent;
+      if (isDone) hasDoneEvent = true;
     }
 
-    if (!hasDoneEvent) {
-      callbacks.onDone();
-    }
-  } catch (err) {
-    console.error("predictStream error:", err);
+    if (!hasDoneEvent) callbacks.onDone();
+  } catch (err: unknown) {
     callbacks.onError?.(err instanceof Error ? err.message : "Request failed");
   }
 }

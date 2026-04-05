@@ -12,6 +12,7 @@ langchain-google-genai>=2.0.0
 langchain>=0.3.0
 langgraph>=0.2.0
 langchain-mcp-adapters>=0.1.0
+loguru>=0.7.0
 redis>=5.0.0
 langchain-redis>=0.1.0
 sqlglot>=26.0.0

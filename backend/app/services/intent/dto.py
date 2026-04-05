@@ -3,7 +3,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class PredictResponse(BaseModel):
+class IntentExtraction(BaseModel):
     """Extracted intent and entities from natural language input."""
 
     intent: str = Field(description="The user's intent: data_query, general, or clarification")

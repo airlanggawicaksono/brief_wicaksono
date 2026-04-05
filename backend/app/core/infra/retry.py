@@ -1,8 +1,7 @@
-import time
-import logging
 import functools
+import time
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 def retry(max_retries: int = 2, backoff: float = 1.0):

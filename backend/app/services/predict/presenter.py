@@ -1,6 +1,6 @@
 import json
 
-from app.core.enums.EventType import EventType
+from app.core.enums.event_type import EventType
 from app.services.predict.dto import ProcessEvent, PredictResult
 
 

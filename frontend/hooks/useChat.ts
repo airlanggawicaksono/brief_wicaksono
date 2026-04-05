@@ -17,6 +17,7 @@ function formatArgs(args: Record<string, unknown> | undefined): string {
 
 function sameStep(a: ProcessEvent, b: ProcessEvent): boolean {
   if (!a || !b) return false;
+  if (a.id && b.id) return a.id === b.id;
   return a.stage === b.stage && a.title === b.title && a.detail === b.detail;
 }
 
@@ -73,7 +74,7 @@ export function useChat(): UseChatReturn {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!input.trim() || loading) return;
 

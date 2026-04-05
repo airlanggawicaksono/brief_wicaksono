@@ -18,14 +18,14 @@ export interface UseChatReturn {
   messages: Message[];
   loading: boolean;
   bottomRef: RefObject<HTMLDivElement | null>;
-  handleSubmit: (e: React.FormEvent) => void;
+  handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
 }
 
 export interface ChatInputProps {
   input: string;
   loading: boolean;
   onInputChange: (value: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
 }
 
 export interface ChatMessageProps {

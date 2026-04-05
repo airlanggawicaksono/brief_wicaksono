@@ -74,7 +74,7 @@ def get_agent_service(
     return AgentService(
         provider=provider,
         tool_policy=tool_policy,
-        message_builder=MessageBuilder(tool_context=build_tool_context(query_policy)),
+        message_builder=MessageBuilder(tool_context=build_tool_context(query_policy, tools)),
         executor=ToolExecutor(tools),
     )
 

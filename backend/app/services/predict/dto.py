@@ -45,9 +45,20 @@ class PredictRequest(BaseModel):
     text: str
 
 
+class Artifact(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    type: Literal["image", "dataset"]
+    name: str = ""
+    format: str = ""
+    image: str = ""
+    row_count: int = 0
+    rows: list[dict] = Field(default_factory=list)
+
+
 class AgentStepOutput(BaseModel):
     tool_results: list[ToolExecution] = Field(default_factory=list)
     message: str = ""
+    artifacts: list[Artifact] = Field(default_factory=list)
 
 
 class PredictResult(BaseModel):
@@ -57,3 +68,4 @@ class PredictResult(BaseModel):
     tool_results: list[ToolExecution] = Field(default_factory=list)
     process: list[ProcessEvent] = Field(default_factory=list)
     message: str = ""
+    artifacts: list[Artifact] = Field(default_factory=list)

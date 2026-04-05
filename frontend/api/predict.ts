@@ -60,6 +60,16 @@ function handleEventChunk(
   return { isDone: eventType === "done" };
 }
 
+export async function resetSession(): Promise<void> {
+  const sessionId = getSessionId();
+  await api.delete("/predict/session", {
+    headers: sessionId ? { "X-Session-Id": sessionId } : {},
+  });
+  // generate a fresh session id so the next request starts completely clean
+  const newId = window.crypto?.randomUUID?.() ?? `${Date.now()}`;
+  saveSessionId(newId);
+}
+
 export async function predictStream(text: string, callbacks: SSECallback) {
   try {
     const sessionId = getSessionId();

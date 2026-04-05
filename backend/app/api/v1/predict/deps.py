@@ -11,6 +11,7 @@ from app.policy.intent import IntentPolicy
 from app.policy.query import QueryPolicy
 from app.policy.tool import ToolPolicy
 from app.repository.chat_memory import RedisChatMemory
+from app.repository.workspace import WorkspaceRepository
 from app.services.agent import AgentService
 from app.services.agent.executor import ToolExecutor
 from app.services.agent.message import MessageBuilder
@@ -46,12 +47,34 @@ def get_schema_service() -> SchemaService:
     return SchemaService()
 
 
+def get_workspace_repository() -> WorkspaceRepository:
+    return WorkspaceRepository()
+
+
+def get_session_id(request: Request) -> str:
+    header_id = request.headers.get("X-Session-Id")
+    if header_id and header_id.strip():
+        return header_id.strip()
+    cookie_id = request.cookies.get("session_id")
+    if cookie_id and cookie_id.strip():
+        return cookie_id.strip()
+    return str(uuid4())
+
+
 def get_query_tools(
     schema_service: SchemaService = Depends(get_schema_service),
     query_policy: QueryPolicy = Depends(get_query_policy),
     db: Session = Depends(get_db),
+    workspace_repo: WorkspaceRepository = Depends(get_workspace_repository),
+    session_id: str = Depends(get_session_id),
 ) -> list:
-    return get_tools(schema_service=schema_service, query_policy=query_policy, db=db)
+    return get_tools(
+        schema_service=schema_service,
+        query_policy=query_policy,
+        db=db,
+        workspace_repo=workspace_repo,
+        session_id=session_id,
+    )
 
 
 def get_intent_service(
@@ -79,26 +102,18 @@ def get_agent_service(
     )
 
 
-def get_session_id(request: Request) -> str:
-    header_id = request.headers.get("X-Session-Id")
-    if header_id and header_id.strip():
-        return header_id.strip()
-    cookie_id = request.cookies.get("session_id")
-    if cookie_id and cookie_id.strip():
-        return cookie_id.strip()
-    return str(uuid4())
-
-
 def get_predict_service(
     provider: BaseChatModel = Depends(get_llm_provider),
     intent_service: IntentService = Depends(get_intent_service),
     agent_service: AgentService = Depends(get_agent_service),
     intent_policy: IntentPolicy = Depends(get_intent_policy),
     chat_memory: RedisChatMemory = Depends(get_chat_memory_repository),
+    workspace_repo: WorkspaceRepository = Depends(get_workspace_repository),
+    session_id: str = Depends(get_session_id),
 ) -> PredictService:
     return PredictService(
         intent_step=IntentStep(intent_service, intent_policy),
-        agent_step=AgentStep(agent_service),
+        agent_step=AgentStep(agent_service, workspace_repo, session_id),
         direct_step=DirectResponseStep(provider),
         chat_memory=chat_memory,
         presenter=SsePresenter(),

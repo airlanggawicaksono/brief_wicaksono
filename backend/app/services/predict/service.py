@@ -52,6 +52,7 @@ class PredictService:
 
         if self.intent_step.intent_policy.is_data_intent(extraction.intent):
             tool_results = []
+            artifacts = []
             message = ""
             for item in self.agent_step.stream(extraction, ctx):
                 if isinstance(item, ProcessEvent):
@@ -60,11 +61,13 @@ class PredictService:
                 elif isinstance(item, AgentStepOutput):
                     tool_results = item.tool_results
                     message = item.message
+                    artifacts = item.artifacts
             mode = "agent" if tool_results else "direct"
         else:
             direct_result = self.direct_step.run(extraction, ctx)
             yield from self._emit(direct_result.events, all_events)
             tool_results = []
+            artifacts = []
             message = direct_result.output or ""
             mode = "direct"
 
@@ -75,10 +78,14 @@ class PredictService:
             tool_results=tool_results,
             process=all_events,
             message=message,
+            artifacts=artifacts,
         )
         self._cache_and_save(ctx, result, message)
         yield self.presenter.result(result)
         yield self.presenter.done()
+
+    def reset_session(self, session_id: str) -> None:
+        self.chat_memory.clear(session_id)
 
     def list_session_history(self, session_id: str, limit: int = 20) -> list[dict]:
         messages = self.chat_memory.load_messages(session_id=session_id, limit=max(1, limit))

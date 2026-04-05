@@ -1,11 +1,12 @@
 import warnings
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.core.infra.retry import retry
 from app.policy.intent import IntentPolicy
 from app.prompts.intent_detection import INTENT_DETECTION_PROMPT
+from app.repository.chat_memory import ChatMessage
 from app.services.intent.dto import IntentExtraction
 
 
@@ -24,11 +25,19 @@ class IntentService:
         self.intent_policy = intent_policy
 
     @retry()
-    def detect(self, text: str) -> IntentExtraction:
-        messages = [
-            SystemMessage(content=INTENT_DETECTION_PROMPT),
-            HumanMessage(content=text),
-        ]
+    def detect(self, text: str, history: list[ChatMessage] | None = None) -> IntentExtraction:
+        messages: list = [SystemMessage(content=INTENT_DETECTION_PROMPT)]
+
+        # include recent history so short follow-ups ("sure", "yes", "ok") are
+        # classified in context rather than in isolation
+        for entry in (history or [])[-6:]:
+            if entry["role"] == "user":
+                messages.append(HumanMessage(content=entry["content"]))
+            elif entry["role"] == "assistant":
+                messages.append(AIMessage(content=entry["content"]))
+
+        messages.append(HumanMessage(content=text))
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
             raw = self.structured_llm.invoke(messages)

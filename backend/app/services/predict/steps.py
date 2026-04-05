@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.core.enums.intents import Intent
 from app.repository.chat_memory import ChatMessage
+from app.repository.workspace import WorkspaceRepository
 from app.policy.intent import IntentPolicy
 from app.core.enums.event_type import Stage, EventType
 from app.prompts.clarification import CLARIFICATION_PROMPT
@@ -41,7 +42,7 @@ class IntentStep:
         ]
 
         try:
-            extraction = self.intent_service.detect(ctx.text)
+            extraction = self.intent_service.detect(ctx.text, history=ctx.history)
         except Exception as exc:
             events.append(
                 ProcessEvent(
@@ -70,8 +71,15 @@ class AgentStep:
 
     name = "agent_execution"
 
-    def __init__(self, agent_service: AgentService):
+    def __init__(
+        self,
+        agent_service: AgentService,
+        workspace_repo: WorkspaceRepository,
+        session_id: str,
+    ):
         self.agent_service = agent_service
+        self.workspace_repo = workspace_repo
+        self.session_id = session_id
 
     def stream(
         self, extraction: IntentExtraction, ctx: RequestContext
@@ -84,7 +92,10 @@ class AgentStep:
             detail="Selecting tools.",
         )
 
+        from app.services.predict.dto import Artifact
+
         tool_results: list[ToolExecution] = []
+        artifacts: list[Artifact] = []
         message = ""
 
         entities = extraction.entities if isinstance(extraction.entities, dict) else None
@@ -111,6 +122,16 @@ class AgentStep:
                         detail=_tool_detail(item),
                         data=_compact_for_ui(item, is_error=is_error),
                     )
+                    artifact_data = _extract_artifact(item, self.workspace_repo, self.session_id)
+                    if artifact_data:
+                        artifact = Artifact(**artifact_data)
+                        artifacts.append(artifact)
+                        yield ProcessEvent(
+                            type=EventType.ARTIFACT,
+                            stage=Stage.ARTIFACT_READY,
+                            title=_artifact_title(artifact_data),
+                            data=artifact.model_dump(warnings=False),
+                        )
             elif isinstance(item, str):
                 message = item
                 yield ProcessEvent(
@@ -120,7 +141,7 @@ class AgentStep:
                     detail=message,
                 )
 
-        yield AgentStepOutput(tool_results=tool_results, message=message)
+        yield AgentStepOutput(tool_results=tool_results, message=message, artifacts=artifacts)
 
 
 class DirectResponseStep:
@@ -227,6 +248,30 @@ def _tool_detail(item: ToolExecution) -> str:
     if isinstance(item.data, dict) and "row_count" in item.data:
         return f"Returned {item.data['row_count']} row(s)."
     return "Complete."
+
+
+def _extract_artifact(
+    item: ToolExecution,
+    workspace_repo: WorkspaceRepository,
+    session_id: str,
+) -> dict | None:
+    if not isinstance(item.data, dict) or "error" in item.data:
+        return None
+    if item.tool == "run_python" and "image" in item.data:
+        return {"type": "image", "format": item.data.get("format", "png"), "image": item.data["image"]}
+    if item.tool == "save_result" and "saved" in item.data:
+        name = item.data["saved"]
+        rows = workspace_repo.load(session_id, name) or []
+        return {"type": "dataset", "name": name, "row_count": item.data.get("row_count", 0), "rows": rows}
+    return None
+
+
+def _artifact_title(artifact: dict) -> str:
+    if artifact.get("type") == "image":
+        return "Chart generated"
+    if artifact.get("type") == "dataset":
+        return f"Dataset: {artifact.get('name', 'result')}"
+    return "Artifact"
 
 
 def _content_to_text(content: object) -> str:

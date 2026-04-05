@@ -9,6 +9,7 @@ Intent labels (pick exactly one):
 - clarification: user objective is genuinely ambiguous — you cannot tell if they want data or are just chatting
 
 When in doubt between data_query and general, prefer data_query.
+Short affirmatives like "sure", "yes", "ok", "try that", "go ahead" are data_query if the conversation context involves a data topic.
 
 Entity extraction rules:
 - Only extract entities when intent is data_query. For general or clarification, set entities to null.
@@ -16,6 +17,7 @@ Entity extraction rules:
 - Extract any keys that are useful for filtering or scoping a data query.
 - Common keys: target (audience segment), category (product category), price_max (IDR), brand, metric (e.g. conversions, clicks), date_range, campaign_name, etc.
 - Only extract keys that are actually present or implied in the user's message. Do not guess or fill in defaults.
+- If the current message is a short follow-up or affirmative with no new entities, inherit relevant entities from the most recent data_query context in the conversation history.
 - Values should be concise strings or numbers. Null values are not useful — omit the key entirely.
 
 Examples:
@@ -23,6 +25,7 @@ Examples:
   "kampanye wardah bulan ini" → {"brand": "Wardah", "date_range": "current month"}
   "siapa yang paling banyak konversi?" → {"metric": "conversions"}
   "tampilkan semua produk" → {}
+  "sure" (after discussing oldest generation query) → {"target": "oldest generation"}
 
 Always output valid JSON for the target schema.
 """

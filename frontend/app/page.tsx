@@ -12,6 +12,7 @@ export default function Home() {
     loading,
     bottomRef,
     handleSubmit,
+    handleReset,
   } = useChat();
 
   return (
@@ -42,6 +43,7 @@ export default function Home() {
             loading={loading}
             onInputChange={setInput}
             onSubmit={handleSubmit}
+            onReset={handleReset}
           />
         </div>
       </div>

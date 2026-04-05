@@ -1,8 +1,9 @@
+from functools import lru_cache
 from typing import Literal
 
 from langchain_core.tools import tool
 
-from app.config.database import MarketingBase, ProductBase
+from app.config.database import ORM_BASES
 from app.services.tools.dto import (
     ColumnMetadata,
     ForeignKeyMetadata,
@@ -11,67 +12,78 @@ from app.services.tools.dto import (
 )
 
 
+@lru_cache(maxsize=1)
+def _build_full_schema() -> SchemaMetadataResponse:
+    """Build and cache schema metadata from all registered ORM bases.
+
+    Runs once per process. ORM metadata is static after startup so caching
+    is safe and avoids re-introspecting on every agent tool call.
+    To expose a new schema to the agent, add it to ORM_BASES in database.py.
+    """
+    schema: dict[str, TableMetadata] = {}
+    relationships: list[ForeignKeyMetadata] = []
+
+    for label, base in ORM_BASES:
+        for mapper in base.registry.mappers:
+            table = mapper.class_.__table__
+            table_schema = table.schema or label
+            table_key = f"{table_schema}.{table.name}"
+
+            columns: list[ColumnMetadata] = []
+            foreign_keys: list[ForeignKeyMetadata] = []
+
+            for col in table.columns:
+                columns.append(
+                    ColumnMetadata(
+                        name=col.name,
+                        type=str(col.type),
+                        nullable=col.nullable,
+                        primary_key=col.primary_key,
+                        indexed=bool(col.index),
+                        max_length=getattr(col.type, "length", None),
+                    )
+                )
+                for fk in col.foreign_keys:
+                    target_column = fk.column
+                    target_table = target_column.table
+                    fk_meta = ForeignKeyMetadata(
+                        source_schema=table_schema,
+                        source_table=table.name,
+                        source_column=col.name,
+                        target_schema=target_table.schema,
+                        target_table=target_table.name,
+                        target_column=target_column.name,
+                        target_fullname=fk.target_fullname,
+                    )
+                    foreign_keys.append(fk_meta)
+                    relationships.append(fk_meta)
+
+            schema[table_key] = TableMetadata(
+                domain=label,
+                schema=table_schema,
+                table=table.name,
+                column_count=len(columns),
+                columns=columns,
+                column_names=[c.name for c in columns],
+                foreign_keys=foreign_keys,
+            )
+
+    return SchemaMetadataResponse(tables=schema, relationships=relationships)
+
+
 class SchemaService:
-    """Introspects ORM registry and returns schema metadata."""
+    """Introspects ORM registry and returns schema metadata.
+
+    Schema is built once on first access and cached for the process lifetime.
+    Only tables registered in ORM_BASES (database.py) are visible to the agent.
+    """
 
     def get_schema(
         self,
         table_name: str | None = None,
         detail_level: Literal["summary", "full"] = "summary",
     ) -> dict:
-        schema: dict[str, TableMetadata] = {}
-        relationships: list[ForeignKeyMetadata] = []
-
-        for label, base in [("product", ProductBase), ("marketing", MarketingBase)]:
-            for mapper in base.registry.mappers:
-                table = mapper.class_.__table__
-                table_schema = table.schema or label
-                table_key = f"{table_schema}.{table.name}"
-
-                columns: list[ColumnMetadata] = []
-                foreign_keys: list[ForeignKeyMetadata] = []
-
-                for col in table.columns:
-                    columns.append(
-                        ColumnMetadata(
-                            name=col.name,
-                            type=str(col.type),
-                            nullable=col.nullable,
-                            primary_key=col.primary_key,
-                            indexed=bool(col.index),
-                            max_length=getattr(col.type, "length", None),
-                        )
-                    )
-
-                    for fk in col.foreign_keys:
-                        target_column = fk.column
-                        target_table = target_column.table
-                        fk_meta = ForeignKeyMetadata(
-                            source_schema=table_schema,
-                            source_table=table.name,
-                            source_column=col.name,
-                            target_schema=target_table.schema,
-                            target_table=target_table.name,
-                            target_column=target_column.name,
-                            target_fullname=fk.target_fullname,
-                        )
-                        foreign_keys.append(fk_meta)
-                        relationships.append(fk_meta)
-
-                schema[table_key] = TableMetadata(
-                    domain=label,
-                    schema=table_schema,
-                    table=table.name,
-                    column_count=len(columns),
-                    columns=columns,
-                    column_names=[column.name for column in columns],
-                    foreign_keys=foreign_keys,
-                )
-
-        schema_response = SchemaMetadataResponse(
-            tables=schema,
-            relationships=relationships,
-        )
+        schema_response = _build_full_schema()
 
         if table_name:
             normalized = table_name.strip().lower()

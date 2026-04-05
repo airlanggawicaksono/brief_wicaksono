@@ -19,6 +19,7 @@ export interface UseChatReturn {
   loading: boolean;
   bottomRef: RefObject<HTMLDivElement | null>;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  handleReset: () => void;
 }
 
 export interface ChatInputProps {
@@ -26,6 +27,7 @@ export interface ChatInputProps {
   loading: boolean;
   onInputChange: (value: string) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  onReset: () => void;
 }
 
 export interface ChatMessageProps {

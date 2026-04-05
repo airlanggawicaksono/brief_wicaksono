@@ -27,6 +27,12 @@ class MessageBuilder:
             messages.append(
                 SystemMessage(content=f"Extracted entities from user input: {json.dumps(entities, ensure_ascii=False)}")
             )
+        elif history:
+            # short follow-up with no new entities — remind the agent this is a
+            # continuation so it uses history context rather than starting fresh
+            messages.append(
+                SystemMessage(content="This is a follow-up to the previous turn. Use conversation history to understand what the user is referring to.")
+            )
 
         if history:
             for entry in history:

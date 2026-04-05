@@ -9,6 +9,7 @@ class Stage(StrEnum):
     TOOL_FINISHED = "tool_finished"
     DIRECT_RESPONSE = "direct_response"
     RESPONSE_READY = "response_ready"
+    ARTIFACT_READY = "artifact_ready"
     FAILED = "failed"
 
 
@@ -18,4 +19,5 @@ class EventType(StrEnum):
     TOOL_END = "tool_end"
     MESSAGE = "message"
     EXTRACTION = "extraction"
+    ARTIFACT = "artifact"
     ERROR = "error"

@@ -53,3 +53,6 @@ class RedisChatMemory:
         history = self._get_history(session_id)
         history.add_user_message(user_text)
         history.add_ai_message(assistant_text)
+
+    def clear(self, session_id: str) -> None:
+        self._get_history(session_id).clear()

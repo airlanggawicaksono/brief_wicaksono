@@ -9,7 +9,7 @@ class ToolPolicy:
 
     tool_allowlist_by_intent: dict[str, set[str]] = field(
         default_factory=lambda: {
-            Intent.DATA_QUERY: {"lookup_schema", "query_table"},
+            Intent.DATA_QUERY: {"lookup_schema", "query_table", "save_result", "list_workspace", "run_python"},
             Intent.GENERAL: set(),
             Intent.CLARIFICATION: set(),
         }

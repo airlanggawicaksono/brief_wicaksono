@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { predictStream } from "@/api/predict";
+import { predictStream, resetSession } from "@/api/predict";
 import type { Message, UseChatReturn } from "@/types/chat";
 import type { ProcessEvent, ToolCall } from "@/types/predict";
 
@@ -243,5 +243,11 @@ export function useChat(): UseChatReturn {
     });
   }
 
-  return { input, setInput, messages, loading, bottomRef, handleSubmit };
+  async function handleReset() {
+    if (loading) return;
+    await resetSession();
+    setMessages([]);
+  }
+
+  return { input, setInput, messages, loading, bottomRef, handleSubmit, handleReset };
 }

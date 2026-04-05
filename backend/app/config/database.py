@@ -49,3 +49,11 @@ class ProductBase(DeclarativeBase):
 
 class MarketingBase(DeclarativeBase):
     metadata = shared_metadata
+
+
+# Single place to register ORM bases with the agent.
+# To expose a new schema: add (label, YourBase) here — nothing else needs changing.
+ORM_BASES: list[tuple[str, type[DeclarativeBase]]] = [
+    ("product", ProductBase),
+    ("marketing", MarketingBase),
+]

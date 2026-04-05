@@ -1,61 +1,12 @@
-# System Design Write-up
+SYSTEM DESIGN OF AN MVP WPP BRIEF CHATBOT
 
-## Overview
+1. Overview of the System design and Structure
+A natural language interface for marketing analytics. Users type plain text; the system detects intent, queries a relational database if needed, and streams a human-readable response back in real time using a simplex connection through SSE.
 
-A natural language interface for marketing analytics. Users type plain text; the system detects intent, queries a relational database if needed, and streams a human-readable response back in real time via SSE.
+Figure 1.1. Business process of the Proposed Application
 
----
+Figure 1.1 shows a layered backend where Redis manages conversation state and a ReAct loop drives the core logic, iteratively selecting and executing tools from the service layer to fulfil user intent. The backend is a FastAPI application split into four layers: API, Services, Policy, and Repository. Each layer has one job and dependencies only flow downward. The service layer contains the tools the agent can call. The policy layer enforces SQL safety and intent validation. The repository layer handles Redis for chat history and response caching.
 
-## System Design
-
-The backend is a FastAPI application structured in clean layers: API, Services, Policy, Repository. Each layer has a single responsibility and no upward dependencies. Tools live under Services as executable units consumed by the agent.
-
-The core flow has two branches. **Intent detection** runs first on every request, returning `intent` and `entities` as a typed Pydantic model. Intent resolves to one of three values: `data_query`, `general`, or `clarification`. Unknown or malformed outputs are normalised to `clarification` by the policy layer. If the intent is `data_query`, the request enters the agent path. Otherwise a direct LLM response is generated using a prompt selected by intent.
-
----
-
-## Agent Loop
-
-The agent is a self-directing tool loop built on LangChain's tool-calling interface. On each iteration the LLM receives the full conversation history including all prior tool results, then returns either tool calls (continue) or a plain text response (done). Tools execute, results are appended as `ToolMessage`, and the LLM re-invokes. The loop exits when the LLM stops requesting tools.
-
-No Python heuristics determine what "sufficient" means; that judgement lives entirely in the LLM via prompt instructions. This makes the loop tool-agnostic: adding new tools requires no changes to the loop logic.
-
----
-
-## Context Injection
-
-Before every agent invocation, `MessageBuilder` assembles the full conversation context. Beyond the base system prompt, two layers are injected at runtime:
-
-**Tool context** is built from live tool objects and the active query policy:
-
-```
-## Available tools
-- lookup_schema: Inspect schema metadata before planning a query.
-  Always call this before query_table to see available tables, columns, and relationships.
-- query_table: Execute a read-only SQL SELECT query against the database.
-
-## Query constraints
-- max_result_rows: 100
-- allow_order_by: True
-- allow_subqueries: False
-- write_operations: disabled (SELECT only)
-```
-
-If a new tool is added or a policy value changes, this context updates automatically with no prompt edits needed.
-
-**Entity context** is injected when the intent step extracted structured entities. For example, for "show Wardah campaigns this month":
-
-```
-Extracted entities from user input: {"brand": "Wardah", "date_range": "current month"}
-```
-
-This steers the agent toward more precise queries without hardcoding any filtering logic in Python. SQL safety is still enforced by the policy layer regardless.
-
----
-
-## Structure
-
-```
 backend/
   app/
     api/          - routes and dependency injection
@@ -64,47 +15,44 @@ backend/
     repository/   - Redis chat memory
     prompts/      - LLM system prompts
     core/         - enums, exceptions, provider factory, infra utilities
-```
+Figure 1.2. System Layer Structure
 
-The LLM provider is abstracted behind a factory driven by `LLM_PROVIDER` in env config. Swapping providers requires a single env change, no code changes. The frontend receives SSE via axios `onDownloadProgress` rather than native `EventSource`, which only supports GET. Each event type maps to a typed callback, keeping transport logic isolated from UI components.
+The frontend is Next.js 15 with React 19. It receives the SSE stream via axios onDownloadProgress instead of the native EventSource API, which only supports GET. Since the predict endpoint is a POST, this lets the request body carry the user text while still streaming the response live.
 
----
 
-## Handling of AI Output
+2. Agent Loop, Extensibility, and Design Decisions
+Every request starts with intent detection. The LLM returns a structured result with two fields: intent, which is always one of data_query, general, or clarification, and entities, which are freeform key-value pairs extracted from the message.
 
-**Structured extraction** uses LangChain structured output so intent detection always returns a typed Pydantic model. Unrecognised intent strings are normalised to `clarification` by policy.
+{
+  "intent": "data_query",
+  "entities": {
+    "brand": "Wardah",
+    "date_range": "current month"
+  }
+}
+Figure 2.1. The output of Intent Detection Service Module
 
-**SQL validation** runs every generated query through `sqlglot` before execution. Non-SELECT statements, disallowed tables, and results exceeding the row limit are rejected before reaching the database.
+Unexpected intent values are normalised to clarification by policy instead of crashing. From there, data_query goes to the agent and everything else gets a direct LLM response. The policy layer uses pure dataclasses with no framework dependencies, and the service layer depends on abstractions so the LLM provider can be swapped with one environment variable change.
 
-**Self-evaluation in the agent** instructs the LLM to assess each tool result itself: is the data human-readable, does it fully answer the question? The LLM decides the next action rather than Python detecting specific failure cases. This scales to any number of tools without brittle case-by-case handling in code.
+The agent loop is a straightforward iteration. The LLM receives the full conversation, calls a tool or responds, and if it calls a tool the result is fed back for the next round. This repeats until the LLM stops calling tools. The loop is capped at 25 rounds. Before the loop starts, the MessageBuilder assembles the context the LLM will work with. It injects two things on top of the base system prompt. First, a tool context block built directly from the live tool objects and the active query policy:
 
----
+tool_lines = [f"- {t.name}: {t.description}" for t in tools]
 
-## Trade-offs
+Figure 2.2. Tool context is derived directly from tool objects at runtime
 
-**SSE over WebSockets** is sufficient for one-way streaming and avoids bidirectional complexity the current use case does not need.
+To add a new tool to the agent, you only need to add the tool object to the list. No prompt edits, no config files, no registration steps. Second, if the intent step extracted entities, those are injected as a hint to steer the agent toward more relevant queries without hardcoding any filtering logic in Python. Extensibility works the same way for tool definitions. A tool is one Python function with a typed signature and a docstring. From that single definition, the LangChain framework generates the JSON Schema the LLM API uses to enforce correct argument types, the description the LLM reads to decide when to call the tool, and the line that appears in the tool context block. Nothing is written twice.
 
-**Self-directing loop over LangGraph** keeps the dependency surface small and control flow explicit. The trade-off is that complex multi-step pipelines will require careful prompt engineering to sequence correctly. LangGraph would handle branching and retry logic more formally.
 
-**Extensibility through interface contracts** means adding a tool requires no changes to the loop, prompt, or routing logic. A tool is defined once with a typed function signature and a docstring, and that single definition drives multiple responsibilities simultaneously:
+3. Handling of AI Uncertainty
+Unreliable LLM output is handled at three points. Intent detection uses structured output so the result is always a typed Pydantic model, and any unrecognised intent is normalised to clarification by policy. Every generated SQL query goes through sqlglot validation before reaching the database, blocking write operations, unknown tables, and results over the row limit. Inside the agent loop, the system prompt instructs the LLM to evaluate its own tool results rather than Python checking for specific failure patterns, which means the same logic applies regardless of how many tools exist.
 
-```python
-@tool
-def query_table(sql: str) -> dict:
-    """Execute a read-only SQL SELECT query against the database.
 
-    Call lookup_schema first to discover available tables and columns.
-    """
-    ...
-```
+4. Trade-offs
 
-From this one definition:
-- The type annotation `sql: str` becomes the JSON Schema the LLM API enforces on `tool_calls[].args` at inference time
-- The docstring becomes the description the LLM reads to decide when and how to call the tool
-- Both the name and description are picked up by `build_tool_context` and injected into every agent conversation automatically
+The agent evaluates its own output quality through the system prompt rather than Python checking for specific failure patterns. This scales to any number of tools without code changes, but it introduces non-determinism. The same query can produce different SQL across runs, and whether the LLM decides to do a JOIN or not depends on how well the prompt is written.
 
-Nothing is declared twice. The contract that enforces correct argument types at runtime is the same contract the LLM uses to understand the tool at inference time. This tight coupling means the system stays consistent by construction: there is no separate metadata file, no prompt snippet, and no registration step to keep in sync when a tool changes.
+Intent detection is a separate LLM call before the agent runs. This adds one round-trip of latency on every request. The benefit is that the classification step is independently testable and can be swapped or improved without touching the agent at all.
 
-**Single LLM call for intent** adds latency but keeps classification clean and independently testable rather than embedding it inside the agent prompt.
+A hand-rolled ReAct loop is used instead of LangGraph. This keeps the control flow explicit and easy to follow, but the current loop has no native support for conditional branching or structured retry logic. Adding tools like subprocess or file export that depend on prior tool outputs will need careful prompt engineering to sequence correctly, whereas LangGraph would handle that more formally.
 
-**ORM-based schema introspection** means schema changes are automatically visible to the agent. Tables not mapped in the ORM are invisible, which is a deliberate constraint that prevents the agent from querying unintended tables.
+Schema discovery uses ORM introspection at runtime so schema changes are automatically visible to the agent. The constraint is that only tables mapped in the ORM exist from the agent's perspective. Any table outside the ORM is invisible by design, which is intentional for safety but means the agent cannot be extended to new tables without a code change.

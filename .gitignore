@@ -30,3 +30,7 @@ Thumbs.db
 postgres_data/
 **/.pnpm-store*
 .claude
+sdlc.md
+step.md
+task.md
+writeup.md 

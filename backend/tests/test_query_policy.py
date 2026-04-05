@@ -52,7 +52,7 @@ def test_unknown_table_blocked(policy):
 
 
 def test_unknown_column_blocked(policy):
-    with pytest.raises(BadRequestException, match="not allowed"):
+    with pytest.raises(BadRequestException, match="not recognized"):
         policy.validate_sql("SELECT secret_column FROM product.products", SCHEMA)
 
 

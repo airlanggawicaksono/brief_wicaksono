@@ -13,14 +13,13 @@ from app.policy.tool import ToolPolicy
 from app.repository.chat_memory import RedisChatMemory
 from app.repository.workspace import WorkspaceRepository
 from app.services.agent import AgentService
-from app.services.agent.executor import ToolExecutor
-from app.services.agent.message import MessageBuilder
 from app.services.intent import IntentService
 from app.services.predict import PredictService
-from app.services.predict.presenter import SsePresenter
-from app.services.predict.steps import AgentStep, DirectResponseStep, IntentStep
-from app.services.tools import build_tool_context, get_tools
+from app.services.tools import get_tools
 from app.services.tools.schema import SchemaService
+
+
+# ── singletons ──────────────────────────────────────────────
 
 
 @lru_cache(maxsize=1)
@@ -43,12 +42,19 @@ def get_tool_policy() -> ToolPolicy:
     return ToolPolicy()
 
 
+# ── per-request infrastructure ──────────────────────────────
+
+
 def get_schema_service() -> SchemaService:
     return SchemaService()
 
 
 def get_workspace_repository() -> WorkspaceRepository:
     return WorkspaceRepository()
+
+
+def get_chat_memory_repository() -> RedisChatMemory:
+    return RedisChatMemory()
 
 
 def get_session_id(request: Request) -> str:
@@ -77,15 +83,14 @@ def get_query_tools(
     )
 
 
+# ── services ────────────────────────────────────────────────
+
+
 def get_intent_service(
     provider: BaseChatModel = Depends(get_llm_provider),
     intent_policy: IntentPolicy = Depends(get_intent_policy),
 ) -> IntentService:
     return IntentService(provider=provider, intent_policy=intent_policy)
-
-
-def get_chat_memory_repository() -> RedisChatMemory:
-    return RedisChatMemory()
 
 
 def get_agent_service(
@@ -97,24 +102,24 @@ def get_agent_service(
     return AgentService(
         provider=provider,
         tool_policy=tool_policy,
-        message_builder=MessageBuilder(tool_context=build_tool_context(query_policy, tools)),
-        executor=ToolExecutor(tools),
+        tools=tools,
+        query_policy=query_policy,
     )
 
 
 def get_predict_service(
-    provider: BaseChatModel = Depends(get_llm_provider),
     intent_service: IntentService = Depends(get_intent_service),
-    agent_service: AgentService = Depends(get_agent_service),
     intent_policy: IntentPolicy = Depends(get_intent_policy),
+    agent_service: AgentService = Depends(get_agent_service),
+    provider: BaseChatModel = Depends(get_llm_provider),
     chat_memory: RedisChatMemory = Depends(get_chat_memory_repository),
     workspace_repo: WorkspaceRepository = Depends(get_workspace_repository),
-    session_id: str = Depends(get_session_id),
 ) -> PredictService:
     return PredictService(
-        intent_step=IntentStep(intent_service, intent_policy),
-        agent_step=AgentStep(agent_service, workspace_repo, session_id),
-        direct_step=DirectResponseStep(provider),
+        intent_service=intent_service,
+        intent_policy=intent_policy,
+        agent_service=agent_service,
+        provider=provider,
         chat_memory=chat_memory,
-        presenter=SsePresenter(),
+        workspace_repo=workspace_repo,
     )

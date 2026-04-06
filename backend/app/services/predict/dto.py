@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -8,8 +8,6 @@ from app.core.enums.event_type import Stage, EventType
 from app.repository.chat_memory import ChatMessage
 from app.services.agent.dto import ToolExecution
 from app.services.intent.dto import IntentExtraction
-
-O = TypeVar("O")
 
 ExecutionPath = Literal["direct", "agent"]
 
@@ -23,14 +21,6 @@ class ProcessEvent(BaseModel):
     detail: str = ""
     data: Any = None
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
-
-
-class StepResult(BaseModel, Generic[O]):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-    ok: bool
-    output: O | None = None
-    events: list[ProcessEvent] = Field(default_factory=list)
-    error: dict | None = None
 
 
 class RequestContext(BaseModel):
@@ -55,10 +45,12 @@ class Artifact(BaseModel):
     rows: list[dict] = Field(default_factory=list)
 
 
-class AgentStepOutput(BaseModel):
+class ResponseOutput(BaseModel):
+    """Unified output from any response strategy (agent or direct)."""
     tool_results: list[ToolExecution] = Field(default_factory=list)
     message: str = ""
     artifacts: list[Artifact] = Field(default_factory=list)
+    mode: ExecutionPath = "direct"
 
 
 class PredictResult(BaseModel):

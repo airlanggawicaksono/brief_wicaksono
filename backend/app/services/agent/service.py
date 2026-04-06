@@ -2,14 +2,16 @@ import json
 from collections.abc import Generator
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 
-from app.repository.chat_memory import ChatMessage
-
+from app.core.llm_utils import content_to_text
+from app.policy.query import QueryPolicy
 from app.policy.tool import ToolPolicy
+from app.repository.chat_memory import ChatMessage
 from app.services.agent.dto import ToolExecution
 from app.services.agent.executor import ToolExecutor
 from app.services.agent.message import MessageBuilder
+from app.services.tools import build_tool_context
 
 
 class AgentService:
@@ -19,13 +21,15 @@ class AgentService:
         self,
         provider: BaseChatModel,
         tool_policy: ToolPolicy,
-        message_builder: MessageBuilder,
-        executor: ToolExecutor,
+        tools: list,
+        query_policy: QueryPolicy,
     ):
         self.provider = provider
         self.tool_policy = tool_policy
-        self.message_builder = message_builder
-        self.executor = executor
+        self._executor = ToolExecutor(tools)
+        self._message_builder = MessageBuilder(
+            tool_context=build_tool_context(query_policy, tools),
+        )
 
     def execute(
         self,
@@ -34,19 +38,17 @@ class AgentService:
         intent: str = "data_query",
         entities: dict | None = None,
     ) -> Generator[ToolExecution | str]:
-        """ """
-
         allowed_names = self.tool_policy.allowed_tools_for_intent(intent)
-        allowed_tools = self.executor.filter_tools(allowed_names)
+        allowed_tools = self._executor.filter_tools(allowed_names)
         llm = self.provider.bind_tools(allowed_tools) if allowed_tools else self.provider
 
-        conversation = self.message_builder.build(text, history, entities=entities)
+        conversation = self._message_builder.build(text, history, entities=entities)
         response = llm.invoke(conversation)
 
         for _ in range(self.tool_policy.max_tool_rounds):
             calls = response.tool_calls or []
             if not calls:
-                message = self._extract_text(response.content)
+                message = content_to_text(response.content)
                 if message:
                     yield message
                 return
@@ -58,12 +60,12 @@ class AgentService:
 
                 if tool_name not in allowed_names:
                     continue
-                if not self.executor.is_available(tool_name):
+                if not self._executor.is_available(tool_name):
                     continue
 
                 yield ToolExecution(tool=tool_name, args=tool_args, data=None)
 
-                output = self.executor.invoke(tool_name, tool_args)
+                output = self._executor.invoke(tool_name, tool_args)
                 yield ToolExecution(tool=tool_name, args=tool_args, data=output)
 
                 tool_call_id = call.get("id") or f"{tool_name}_call"
@@ -74,36 +76,15 @@ class AgentService:
                     )
                 )
 
-
             response = llm.invoke(conversation)
 
-        # loop exhausted without a clean exit — yield whatever the LLM last said
-        message = self._extract_text(response.content)
+        message = content_to_text(response.content)
         yield message if message else "I wasn't able to fully resolve your query within the allowed steps. Try rephrasing or narrowing your question."
 
-    def _extract_text(self, content: object) -> str:
-        """ """
-        if isinstance(content, str):
-            return content.strip()
-        if isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if isinstance(item, str):
-                    parts.append(item)
-                elif isinstance(item, dict):
-                    text = item.get("text")
-                    if isinstance(text, str):
-                        parts.append(text)
-            return " ".join(p.strip() for p in parts if p and p.strip()).strip()
-        return ""
-
     def _serialize(self, output: object) -> str:
-        """ """
-
         if isinstance(output, str):
             return output
         try:
             return json.dumps(output, ensure_ascii=False, default=str)
         except TypeError:
             return str(output)
-

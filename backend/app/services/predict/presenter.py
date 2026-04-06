@@ -47,9 +47,68 @@ class SsePresenter:
         return f"event: result\ndata: {data.model_dump_json(warnings=False)}\n\n"
 
     @staticmethod
-    def cached(data: PredictResult) -> str:
-        return f"event: cached\ndata: {data.model_dump_json(warnings=False)}\n\n"
-
-    @staticmethod
     def done() -> str:
         return "event: done\ndata: {}\n\n"
+
+
+class ToolResultFormatter:
+    """All formatting logic for tool execution results: compaction, artifact extraction, labels.
+
+    Lives here (presentation layer) so steps.py stays pure orchestration.
+    """
+
+    @staticmethod
+    def is_error(item) -> bool:
+        return isinstance(item.data, dict) and "error" in item.data
+
+    @staticmethod
+    def compact_for_ui(item, *, is_error: bool = False) -> dict:
+        """Compact tool output for the frontend.
+
+        Error results get a flat {tool, args, error: true, message} shape.
+        Schema results strip verbose column metadata down to a summary.
+        """
+        if is_error and isinstance(item.data, dict):
+            error = item.data.get("error", {})
+            msg = error.get("message", "Error") if isinstance(error, dict) else str(error)
+            return {"tool": item.tool, "args": item.args, "error": True, "message": msg}
+
+        if item.tool == "save_result":
+            return {"tool": item.tool, "args": item.args, "saved": True}
+
+        if item.tool in ("list_workspace", "run_python"):
+            return {"tool": item.tool, "args": item.args}
+
+        if item.tool != "lookup_schema" or not isinstance(item.data, dict):
+            return item.model_dump(warnings=False)
+
+        tables = item.data.get("tables")
+        if not isinstance(tables, dict):
+            return item.model_dump(warnings=False)
+
+        compact_tables = [
+            {
+                "table": table_key,
+                "column_count": meta.get("column_count"),
+                "columns": meta.get("column_names"),
+            }
+            for table_key, meta in tables.items()
+            if isinstance(meta, dict)
+        ]
+        return {
+            "tool": item.tool,
+            "args": item.args,
+            "data": {"table_count": len(compact_tables), "tables": compact_tables},
+        }
+
+    @staticmethod
+    def detail(item) -> str:
+        if isinstance(item.data, dict) and "error" in item.data:
+            error = item.data["error"]
+            if isinstance(error, dict):
+                return error.get("message", "Error")
+            return str(error)
+        if isinstance(item.data, dict) and "row_count" in item.data:
+            return f"Returned {item.data['row_count']} row(s)."
+        return "Complete."
+

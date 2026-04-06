@@ -20,12 +20,20 @@ Entity extraction rules:
 - If the current message is a short follow-up or affirmative with no new entities, inherit relevant entities from the most recent data_query context in the conversation history.
 - Values should be concise strings or numbers. Null values are not useful — omit the key entirely.
 
+Entity resolution rules:
+- Always resolve abbreviations, slang, and informal language into clear, human-readable values.
+  "gen z" → "Generation Z", "milenial" → "Millennial", "100rb" → 100000, "konversi" → "conversions"
+- Resolve vague references using conversation history. "yang tadi" → inherit the specific entity from the prior turn.
+- Resolve relative terms into concrete values when possible. "bulan ini" → "current month", "yang termurah" → add sort/filter intent.
+- Entity values must be immediately usable — never leave raw slang, shorthand, or ambiguous references unresolved.
+
 Examples:
-  "produk skincare untuk gen z di bawah 100rb" → {"target": "gen z", "category": "skincare", "price_max": 100000}
+  "produk skincare untuk gen z di bawah 100rb" → {"target": "Generation Z", "category": "skincare", "price_max": 100000}
   "kampanye wardah bulan ini" → {"brand": "Wardah", "date_range": "current month"}
-  "siapa yang paling banyak konversi?" → {"metric": "conversions"}
+  "siapa yang paling banyak konversi?" → {"metric": "conversions", "sort": "highest"}
   "tampilkan semua produk" → {}
   "sure" (after discussing oldest generation query) → {"target": "oldest generation"}
+  "data kampanye apa aja" → {"scope": "campaigns"}
 
 Always output valid JSON for the target schema.
 """

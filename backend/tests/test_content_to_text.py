@@ -1,4 +1,4 @@
-from app.services.predict.steps import _content_to_text
+from app.core.llm_utils import content_to_text as _content_to_text
 
 
 def test_plain_string():

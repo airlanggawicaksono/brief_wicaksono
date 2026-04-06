@@ -1,9 +1,6 @@
 import json
-
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-
 from app.repository.chat_memory import ChatMessage
-from app.prompts.tool_agent import TOOL_AGENT_PROMPT
 
 
 class MessageBuilder:
@@ -18,8 +15,8 @@ class MessageBuilder:
         history: list[ChatMessage] | None = None,
         entities: dict | None = None,
     ) -> list[BaseMessage]:
+        # Prompt-agnostic context: behavior should come from tools + policy constraints.
         messages: list[BaseMessage] = [
-            SystemMessage(content=TOOL_AGENT_PROMPT),
             SystemMessage(content=self._tool_context),
         ]
         if entities:
@@ -30,9 +27,10 @@ class MessageBuilder:
             # short follow-up with no new entities — remind the agent this is a
             # continuation so it uses history context rather than starting fresh
             messages.append(
-                SystemMessage(content="This is a follow-up to the previous turn. Use conversation history to understand what the user is referring to.")
+                SystemMessage(
+                    content="This is a follow-up to the previous turn. Use conversation history to understand what the user is referring to."
+                )
             )
-
         if history:
             for entry in history:
                 if entry["role"] == "user":

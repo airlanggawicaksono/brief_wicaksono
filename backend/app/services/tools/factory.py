@@ -29,8 +29,8 @@ def get_tools(
 def build_tool_context(query_policy: QueryPolicy, tools: list) -> str:
     """Build a system message string injected into every agent conversation.
 
-    This is sent as a second SystemMessage (after TOOL_AGENT_PROMPT) so the LLM
-    always knows — at runtime — which tools exist and what policy limits apply.
+    This is sent as a SystemMessage so the LLM always knows — at runtime —
+    which tools exist and what policy limits apply.
 
     ## Available tools
     Each line is:  - <tool.name>: <tool.description>

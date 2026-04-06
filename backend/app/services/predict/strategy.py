@@ -179,6 +179,12 @@ class DirectResponseStrategy:
             elif entry["role"] == "assistant":
                 messages.append(AIMessage(content=entry["content"]))
 
+        prev_user_msg = next(
+            (m["content"] for m in reversed(history or []) if m["role"] == "user"),
+            None,
+        )
+        lang_ref = (prev_user_msg or text)[:120]
+        messages.append(SystemMessage(content=f"Language rule: respond in the exact same language as this message: \"{lang_ref}\""))
         messages.append(HumanMessage(content=text))
         for chunk in self._provider.stream(messages):
             t = chunk_to_text(chunk.content)

@@ -21,7 +21,6 @@ class MessageBuilder:
         messages: list[BaseMessage] = [
             SystemMessage(content=TOOL_AGENT_PROMPT),
             SystemMessage(content=self._tool_context),
-            SystemMessage(content=f"User language hint: reply in the same language as this input -> {text}"),
         ]
         if entities:
             messages.append(

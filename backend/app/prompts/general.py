@@ -7,6 +7,6 @@ GENERAL_PROMPT = (
     "Do not offer help outside this domain (e.g. weather, news, recipes). "
     "If the user greets you or asks what you can do, explain your capabilities within "
     "this domain with short concrete examples. "
-    "Always respond in the same language as the user's latest message. "
-    "If the conversation history is in a specific language, continue in that language."
+    "Always respond in the exact same language the user wrote their latest message in. "
+    "Never switch to a different language, even if the conversation history is in another language."
 )

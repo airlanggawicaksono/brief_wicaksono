@@ -2,7 +2,7 @@ import json
 from collections.abc import Generator
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 
 from app.core.llm_utils import chunk_to_text
 from app.policy.query import QueryPolicy
@@ -43,10 +43,18 @@ class AgentService:
         llm = self.provider.bind_tools(allowed_tools) if allowed_tools else self.provider
 
         conversation = self._message_builder.build(text, history, entities=entities)
+        prev_user_msg = next(
+            (m["content"] for m in reversed(history or []) if m["role"] == "user"),
+            None,
+        )
+        lang_ref = (prev_user_msg or text)[:120]
+        lang_hint = SystemMessage(
+            content=f"Language rule: respond in the exact same language as this message: \"{lang_ref}\""
+        )
 
         for round_idx in range(self.tool_policy.max_tool_rounds + 1):
             full_response = None
-            for chunk in llm.stream(conversation):
+            for chunk in llm.stream([*conversation, lang_hint]):
                 full_response = (full_response + chunk) if full_response else chunk
                 chunk_text = chunk_to_text(chunk.content)
                 if chunk_text:

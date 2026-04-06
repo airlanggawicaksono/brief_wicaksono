@@ -37,20 +37,14 @@ class AgentService:
         history: list[ChatMessage] | None = None,
         intent: str = "data_query",
         entities: dict | None = None,
+        language: str = "English",
     ) -> Generator[ToolExecution | str]:
         allowed_names = self.tool_policy.allowed_tools_for_intent(intent)
         allowed_tools = self._executor.filter_tools(allowed_names)
         llm = self.provider.bind_tools(allowed_tools) if allowed_tools else self.provider
 
         conversation = self._message_builder.build(text, history, entities=entities)
-        prev_user_msg = next(
-            (m["content"] for m in reversed(history or []) if m["role"] == "user"),
-            None,
-        )
-        lang_ref = (prev_user_msg or text)[:120]
-        lang_hint = SystemMessage(
-            content=f"Language rule: respond in the exact same language as this message: \"{lang_ref}\""
-        )
+        lang_hint = SystemMessage(content=f"Language rule: respond in {language}.")
 
         for round_idx in range(self.tool_policy.max_tool_rounds + 1):
             full_response = None

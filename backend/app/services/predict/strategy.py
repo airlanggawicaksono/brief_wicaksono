@@ -56,7 +56,7 @@ class AgentResponseStrategy:
 
         entities = extraction.entities if isinstance(extraction.entities, dict) else None
         for item in self._agent_service.execute(
-            ctx.text, ctx.history, intent=extraction.intent, entities=entities
+            ctx.text, ctx.history, intent=extraction.intent, entities=entities, language=extraction.language
         ):
             if isinstance(item, ToolExecution):
                 if item.data is None:
@@ -149,7 +149,7 @@ class DirectResponseStrategy:
         )
 
         message = ""
-        for chunk_text in self._stream(ctx.text, extraction.intent, ctx.history):
+        for chunk_text in self._stream(ctx.text, extraction.intent, ctx.history, extraction.language):
             message += chunk_text
             yield ProcessEvent(
                 type=EventType.MESSAGE,
@@ -169,7 +169,7 @@ class DirectResponseStrategy:
 
         yield ResponseOutput(message=message, mode="direct")
 
-    def _stream(self, text: str, intent: str, history: list) -> Generator[str]:
+    def _stream(self, text: str, intent: str, history: list, language: str = "English") -> Generator[str]:
         system_content = CLARIFICATION_PROMPT if intent == Intent.CLARIFICATION else GENERAL_PROMPT
         messages: list = [SystemMessage(content=system_content)]
 
@@ -179,12 +179,7 @@ class DirectResponseStrategy:
             elif entry["role"] == "assistant":
                 messages.append(AIMessage(content=entry["content"]))
 
-        prev_user_msg = next(
-            (m["content"] for m in reversed(history or []) if m["role"] == "user"),
-            None,
-        )
-        lang_ref = (prev_user_msg or text)[:120]
-        messages.append(SystemMessage(content=f"Language rule: respond in the exact same language as this message: \"{lang_ref}\""))
+        messages.append(SystemMessage(content=f"Language rule: respond in {language}."))
         messages.append(HumanMessage(content=text))
         for chunk in self._provider.stream(messages):
             t = chunk_to_text(chunk.content)

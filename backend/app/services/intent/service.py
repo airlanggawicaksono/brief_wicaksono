@@ -60,6 +60,6 @@ class IntentService:
             raw = getattr(raw, "parsed", raw)
 
         if isinstance(raw, IntentExtraction):
-            return IntentExtraction(intent=raw.intent, entities=raw.entities)
+            return IntentExtraction(intent=raw.intent, entities=raw.entities, language=raw.language)
 
         return IntentExtraction.model_validate(raw)

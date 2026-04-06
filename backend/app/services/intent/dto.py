@@ -11,3 +11,12 @@ class IntentExtraction(BaseModel):
         default=None,
         description="Freeform key-value entities summarising what the user wants. Only present for data_query.",
     )
+    language: str = Field(
+        default="English",
+        description=(
+            "The language to respond in. "
+            "Infer from the most recent user message in conversation history that has a clear language signal. "
+            "Use the previous user message if the current one is too short or ambiguous. "
+            "Examples: 'Indonesian', 'English', 'Japanese'."
+        ),
+    )

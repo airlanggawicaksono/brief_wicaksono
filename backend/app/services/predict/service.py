@@ -61,7 +61,8 @@ class PredictService:
         output: ResponseOutput | None = None
         for item in strategy.execute(extraction, ctx):
             if isinstance(item, ProcessEvent):
-                all_events.append(item)
+                if item.type != EventType.MESSAGE:
+                    all_events.append(item)
                 yield self._presenter.render(item)
             elif isinstance(item, ResponseOutput):
                 output = item

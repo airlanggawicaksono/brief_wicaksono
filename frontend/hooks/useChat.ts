@@ -110,9 +110,11 @@ export function useChat(): UseChatReturn {
         if (targetIndex < 0 || targetIndex >= updated.length) return prev;
         assistantIndex = targetIndex;
 
-        const msg = updated[targetIndex];
-        if (!msg) return prev;
+        const original = updated[targetIndex];
+        if (!original) return prev;
+        const msg = { ...original };
         fn(msg);
+        updated[targetIndex] = msg;
         return updated;
       });
     };
@@ -215,7 +217,7 @@ export function useChat(): UseChatReturn {
       },
       onMessage: (message: string) => {
         if (typeof message !== "string") return;
-        update((msg) => { msg.content = message; });
+        update((msg) => { msg.content = (msg.content || "") + message; });
       },
       onResult: (result) => {
         if (!result || typeof result !== "object") return;

@@ -44,6 +44,7 @@ services:
       APP_HOST: ${APP_HOST:-0.0.0.0}
       APP_PORT: ${APP_PORT:-8000}
       APP_RELOAD: ${APP_RELOAD:-true}
+      WATCHFILES_FORCE_POLLING: "true"
       DB_USER: ${DB_USER:-wpp}
       DB_PASSWORD: ${DB_PASSWORD:-wpp_dev_password}
       DB_NAME: ${DB_NAME:-wpp_db}
@@ -72,7 +73,7 @@ services:
     command: >
       sh -c "
         if [ \"$$APP_RELOAD\" = \"true\" ]; then
-          uvicorn app:app --host 0.0.0.0 --port $$APP_PORT --reload
+          uvicorn app:app --host 0.0.0.0 --port $$APP_PORT --reload --reload-dir /app/app --reload-dir /app/tests
         else
           uvicorn app:app --host 0.0.0.0 --port $$APP_PORT --workers 4
         fi

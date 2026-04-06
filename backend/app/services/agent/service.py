@@ -4,7 +4,7 @@ from collections.abc import Generator
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import ToolMessage
 
-from app.core.llm_utils import content_to_text
+from app.core.llm_utils import chunk_to_text
 from app.policy.query import QueryPolicy
 from app.policy.tool import ToolPolicy
 from app.repository.chat_memory import ChatMessage
@@ -43,17 +43,26 @@ class AgentService:
         llm = self.provider.bind_tools(allowed_tools) if allowed_tools else self.provider
 
         conversation = self._message_builder.build(text, history, entities=entities)
-        response = llm.invoke(conversation)
 
-        for _ in range(self.tool_policy.max_tool_rounds):
-            calls = response.tool_calls or []
-            if not calls:
-                message = content_to_text(response.content)
-                if message:
-                    yield message
+        for round_idx in range(self.tool_policy.max_tool_rounds + 1):
+            full_response = None
+            for chunk in llm.stream(conversation):
+                full_response = (full_response + chunk) if full_response else chunk
+                chunk_text = chunk_to_text(chunk.content)
+                if chunk_text:
+                    yield chunk_text
+
+            if full_response is None:
                 return
 
-            conversation.append(response)
+            calls = full_response.tool_calls or []
+            if not calls:
+                return
+
+            if round_idx >= self.tool_policy.max_tool_rounds:
+                break
+
+            conversation.append(full_response)
             for call in calls:
                 tool_name = call["name"]
                 tool_args = call["args"]
@@ -76,10 +85,7 @@ class AgentService:
                     )
                 )
 
-            response = llm.invoke(conversation)
-
-        message = content_to_text(response.content)
-        yield message if message else "I wasn't able to fully resolve your query within the allowed steps. Try rephrasing or narrowing your question."
+        yield "I wasn't able to fully resolve your query within the allowed steps. Try rephrasing or narrowing your question."
 
     def _serialize(self, output: object) -> str:
         if isinstance(output, str):

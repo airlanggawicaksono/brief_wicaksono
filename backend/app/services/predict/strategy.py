@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.core.enums.event_type import EventType, Stage
 from app.core.enums.intents import Intent
-from app.core.llm_utils import content_to_text
+from app.core.llm_utils import chunk_to_text
 from app.prompts.clarification import CLARIFICATION_PROMPT
 from app.prompts.general import GENERAL_PROMPT
 from app.repository.workspace import WorkspaceRepository
@@ -88,12 +88,12 @@ class AgentResponseStrategy:
                             data=artifact.model_dump(warnings=False),
                         )
             elif isinstance(item, str):
-                message = item
+                message += item
                 yield ProcessEvent(
                     type=EventType.MESSAGE,
                     stage=Stage.RESPONSE_READY,
                     title="Response",
-                    detail=message,
+                    detail=item,
                 )
 
         yield ResponseOutput(
@@ -148,18 +148,28 @@ class DirectResponseStrategy:
             detail="No tool execution needed.",
         )
 
-        message = self._respond(ctx.text, extraction.intent, ctx.history)
+        message = ""
+        for chunk_text in self._stream(ctx.text, extraction.intent, ctx.history):
+            message += chunk_text
+            yield ProcessEvent(
+                type=EventType.MESSAGE,
+                stage=Stage.RESPONSE_READY,
+                title="Response",
+                detail=chunk_text,
+            )
 
-        yield ProcessEvent(
-            type=EventType.MESSAGE,
-            stage=Stage.RESPONSE_READY,
-            title="Response",
-            detail=message,
-        )
+        if not message:
+            message = "Could you clarify what you need about products, audiences, campaigns, or performance?"
+            yield ProcessEvent(
+                type=EventType.MESSAGE,
+                stage=Stage.RESPONSE_READY,
+                title="Response",
+                detail=message,
+            )
 
         yield ResponseOutput(message=message, mode="direct")
 
-    def _respond(self, text: str, intent: str, history: list) -> str:
+    def _stream(self, text: str, intent: str, history: list) -> Generator[str]:
         system_content = CLARIFICATION_PROMPT if intent == Intent.CLARIFICATION else GENERAL_PROMPT
         messages: list = [SystemMessage(content=system_content)]
 
@@ -170,5 +180,7 @@ class DirectResponseStrategy:
                 messages.append(AIMessage(content=entry["content"]))
 
         messages.append(HumanMessage(content=text))
-        response = self._provider.invoke(messages)
-        return content_to_text(response.content) or "Could you clarify what you need about products, audiences, campaigns, or performance?"
+        for chunk in self._provider.stream(messages):
+            t = chunk_to_text(chunk.content)
+            if t:
+                yield t

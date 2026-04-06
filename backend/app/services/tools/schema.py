@@ -152,6 +152,7 @@ def create_lookup_schema_tool(schema_service: SchemaService):
         """Inspect schema metadata and query constraints before planning a query.
 
         Always call this before query_table to see available tables, columns, and relationships.
+        This is a planning/discovery step and not a final user answer for concrete data requests.
         """
         normalized_detail = detail_level.lower().strip()
         detail: Literal["summary", "full"] = "summary"

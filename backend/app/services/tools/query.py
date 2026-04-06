@@ -43,6 +43,8 @@ def create_query_table_tool(
 
         Write standard PostgreSQL SELECT queries using schema-qualified table names.
         Call lookup_schema first to discover available tables and columns.
+        For concrete business requests (lists, items, segments, products, campaigns, metrics),
+        fetch and return actual rows instead of stopping at schema description.
         """
         current_schema = schema_service.get_schema(detail_level="summary")
 

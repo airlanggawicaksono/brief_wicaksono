@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Generator
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -45,20 +46,46 @@ class AgentService:
 
         conversation = self._message_builder.build(text, history, entities=entities)
         lang_hint = SystemMessage(content=f"Language rule: respond in {language}.")
+        used_lookup_schema = False
+        used_data_fetch = False
+        forced_concrete_fetch_once = False
 
         for round_idx in range(self.tool_policy.max_tool_rounds + 1):
             full_response = None
+            round_text_parts: list[str] = []
             for chunk in llm.stream([*conversation, lang_hint]):
                 full_response = (full_response + chunk) if full_response else chunk
                 chunk_text = chunk_to_text(chunk.content)
                 if chunk_text:
-                    yield chunk_text
+                    round_text_parts.append(chunk_text)
 
             if full_response is None:
                 return
 
+            round_text = "".join(round_text_parts)
             calls = full_response.tool_calls or []
             if not calls:
+                if self._should_force_concrete_data_fetch(
+                    intent=intent,
+                    user_text=text,
+                    used_lookup_schema=used_lookup_schema,
+                    used_data_fetch=used_data_fetch,
+                    already_forced=forced_concrete_fetch_once,
+                ):
+                    forced_concrete_fetch_once = True
+                    conversation.append(full_response)
+                    conversation.append(
+                        SystemMessage(
+                            content=(
+                                "You have only identified structure. "
+                                "Now fetch concrete business rows/values and answer directly. "
+                                "Do not stop at structure-only explanation."
+                            )
+                        )
+                    )
+                    continue
+                if round_text:
+                    yield round_text
                 return
 
             if round_idx >= self.tool_policy.max_tool_rounds:
@@ -73,6 +100,11 @@ class AgentService:
                     continue
                 if not self._executor.is_available(tool_name):
                     continue
+
+                if tool_name == "lookup_schema":
+                    used_lookup_schema = True
+                if tool_name in {"query_table", "save_result"}:
+                    used_data_fetch = True
 
                 yield ToolExecution(tool=tool_name, args=tool_args, data=None)
 
@@ -96,3 +128,46 @@ class AgentService:
             return json.dumps(output, ensure_ascii=False, default=str)
         except TypeError:
             return str(output)
+
+    @staticmethod
+    def _is_technical_structure_request(user_text: str) -> bool:
+        lowered = user_text.lower()
+        tokens = (
+            "schema",
+            "table",
+            "tables",
+            "column",
+            "columns",
+            "field",
+            "fields",
+            "sql",
+            "query structure",
+            "struktur",
+            "kolom",
+            "tabel",
+            "skema",
+        )
+        if any(token in lowered for token in tokens):
+            return True
+        return bool(re.search(r"\b(ddl|erd)\b", lowered))
+
+    def _should_force_concrete_data_fetch(
+        self,
+        *,
+        intent: str,
+        user_text: str,
+        used_lookup_schema: bool,
+        used_data_fetch: bool,
+        already_forced: bool,
+    ) -> bool:
+        if intent.strip().lower() != "data_query":
+            return False
+        if already_forced:
+            return False
+        if used_data_fetch:
+            return False
+        if not used_lookup_schema:
+            return False
+        if self._is_technical_structure_request(user_text):
+            return False
+        return True

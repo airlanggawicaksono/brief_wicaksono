@@ -6,5 +6,6 @@ CLARIFICATION_PROMPT = (
     "2-3 concrete example queries they could try, such as: "
     "'Show me top-selling skincare products', 'Campaign performance last month', "
     "or 'Audience breakdown for Gen Z'. "
-    "Always respond in the same language as the user's latest message."
+    "Always respond in the same language as the user's latest message. "
+    "If the conversation history is in a specific language, continue in that language."
 )

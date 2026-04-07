@@ -84,8 +84,10 @@ class AgentService:
                         )
                     )
                     continue
-                if round_text:
-                    yield round_text
+                # Preserve token/chunk-level streaming for final assistant text.
+                for part in round_text_parts:
+                    if part:
+                        yield part
                 return
 
             if round_idx >= self.tool_policy.max_tool_rounds:

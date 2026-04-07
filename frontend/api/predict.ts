@@ -74,38 +74,57 @@ export async function resetSession(): Promise<void> {
 export async function predictStream(text: string, callbacks: SSECallback) {
   try {
     const sessionId = getSessionId();
-    let processedLength = 0;
     let buffer = "";
     let hasDoneEvent = false;
 
-    const response = await api.post<string>("/predict", { text }, {
+    const baseURL = process.env.NEXT_PUBLIC_API_URL ?? "";
+    const response = await fetch(`${baseURL}/predict`, {
+      method: "POST",
       headers: {
+        "Content-Type": "application/json",
         Accept: "text/event-stream",
         "Cache-Control": "no-cache",
         ...(sessionId ? { "X-Session-Id": sessionId } : {}),
       },
-      responseType: "text",
-      onDownloadProgress: (progressEvent) => {
-        const target = progressEvent.event?.target as { responseText?: string } | null;
-        const accumulated = target?.responseText ?? "";
-        const newChunk = accumulated.slice(processedLength);
-        processedLength = accumulated.length;
-
-        buffer += newChunk;
-        buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop() ?? "";
-
-        for (const chunk of chunks) {
-          const { isDone } = handleEventChunk(chunk, callbacks);
-          if (isDone) hasDoneEvent = true;
-        }
-      },
+      body: JSON.stringify({ text }),
     });
 
-    const serverSessionId = response.headers["x-session-id"];
-    if (typeof serverSessionId === "string" && serverSessionId.trim()) {
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `Request failed with status ${response.status}`);
+    }
+
+    const serverSessionId = response.headers.get("x-session-id");
+    if (serverSessionId && serverSessionId.trim()) {
       saveSessionId(serverSessionId.trim());
+    }
+
+    if (!response.body) {
+      throw new Error("Streaming response body is empty");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() ?? "";
+
+      for (const chunk of chunks) {
+        const { isDone } = handleEventChunk(chunk, callbacks);
+        if (isDone) hasDoneEvent = true;
+      }
+    }
+
+    const tail = decoder.decode();
+    if (tail) {
+      buffer += tail;
     }
 
     if (buffer.trim()) {

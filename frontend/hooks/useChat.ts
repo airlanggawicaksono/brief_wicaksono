@@ -149,7 +149,7 @@ export function useChat(): UseChatReturn {
       onToolStart: (tool: ToolCall) => {
         if (!tool || typeof tool !== "object" || typeof tool.tool !== "string") return;
         update((msg) => {
-          const calls = msg.toolCalls ?? [];
+          const calls = [...(msg.toolCalls ?? [])];
           const key = toolKey(tool);
           const idx = calls.findIndex((item) => toolKey(item) === key);
           if (idx >= 0) {
@@ -173,7 +173,7 @@ export function useChat(): UseChatReturn {
       onToolEnd: (tool: ToolCall) => {
         if (!tool || typeof tool !== "object" || typeof tool.tool !== "string") return;
         update((msg) => {
-          const calls = msg.toolCalls ?? [];
+          const calls = [...(msg.toolCalls ?? [])];
           const key = toolKey(tool);
           const idx = calls.findLastIndex((t) => toolKey(t) === key && t.loading);
           if (idx >= 0) {
